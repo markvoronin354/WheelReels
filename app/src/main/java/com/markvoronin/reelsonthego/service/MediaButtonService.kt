@@ -299,8 +299,10 @@ class MediaButtonService : Service() {
     private fun activateMediaSession() {
         if (mediaSession?.isActive == true) return
 
-        requestAudioFocus()
-        startSilentAudio()
+        val focusGranted = requestAudioFocus()
+        if (focusGranted) {
+            startSilentAudio()
+        }
 
         val state = PlaybackState.Builder()
             .setActions(
@@ -338,8 +340,25 @@ class MediaButtonService : Service() {
         Logger.log("Deactivated MediaSession & Released AudioFocus")
     }
 
-    private fun requestAudioFocus() {
-        val am = audioManager ?: return
+    private val onAudioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        Logger.log("AudioFocus change: $focusChange")
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                stopSilentAudio()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (mediaSession?.isActive == true) {
+                    startSilentAudio()
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        val am = audioManager ?: return false
+        val listener = onAudioFocusChangeListener
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(
@@ -349,22 +368,22 @@ class MediaButtonService : Service() {
                         .build()
                 )
                 .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    Logger.log("AudioFocus change: $focusChange")
-                }
+                .setOnAudioFocusChangeListener(listener)
                 .build()
 
             audioFocusRequest = focusRequest
             val res = am.requestAudioFocus(focusRequest)
             Logger.log("Requested Audio Focus (AUDIOFOCUS_GAIN): result=$res")
+            return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         } else {
             @Suppress("DEPRECATION")
             val res = am.requestAudioFocus(
-                { focus -> Logger.log("AudioFocus change: $focus") },
+                listener,
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN
             )
             Logger.log("Requested Audio Focus: result=$res")
+            return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
     }
 
