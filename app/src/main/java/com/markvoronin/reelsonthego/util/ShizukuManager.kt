@@ -5,11 +5,13 @@ import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.Executors
 
 object ShizukuManager {
 
     private const val REQUEST_CODE = 2001
     private var isListenersRegistered = false
+    private val gestureExecutor = Executors.newSingleThreadExecutor()
 
     fun init() {
         if (isListenersRegistered) return
@@ -97,8 +99,8 @@ object ShizukuManager {
         val y = height / 2
         val command = "input tap $x $y && sleep 0.08 && input tap $x $y"
 
-        if (isGranted) {
-            Thread {
+        gestureExecutor.execute {
+            if (isGranted) {
                 try {
                     Logger.log("Executing Double Tap via Shizuku: $command")
                     val process = execShizuku(command)
@@ -111,21 +113,19 @@ object ShizukuManager {
                 } catch (e: Exception) {
                     Logger.log("Shizuku doubleTap error: ${e.message}", isError = true)
                 }
-            }.start()
-        } else if (isRootAvailable) {
-            Thread {
+            } else if (isRootAvailable) {
                 execRootCmd(command)
-            }.start()
-        } else {
-            Logger.log("Shizuku / Root doubleTap skipped: Permission not granted", isError = true)
+            } else {
+                Logger.log("Shizuku / Root doubleTap skipped: Permission not granted", isError = true)
+            }
         }
     }
 
     private fun executeSwipe(startX: Int, startY: Int, endX: Int, endY: Int, durationMs: Long) {
         val command = "input swipe $startX $startY $endX $endY $durationMs"
 
-        if (isGranted) {
-            Thread {
+        gestureExecutor.execute {
+            if (isGranted) {
                 try {
                     Logger.log("Executing via Shizuku: $command")
                     val process = execShizuku(command)
@@ -144,13 +144,11 @@ object ShizukuManager {
                     Logger.log("Shizuku swipe error, trying Root: ${e.message}", isError = true)
                     executeRootSwipe(command)
                 }
-            }.start()
-        } else if (isRootAvailable) {
-            Thread {
+            } else if (isRootAvailable) {
                 executeRootSwipe(command)
-            }.start()
-        } else {
-            Logger.log("Shizuku / Root swipe skipped: Neither Shizuku nor Root is granted", isError = true)
+            } else {
+                Logger.log("Shizuku / Root swipe skipped: Neither Shizuku nor Root is granted", isError = true)
+            }
         }
     }
 
@@ -171,8 +169,8 @@ object ShizukuManager {
         val cmd2 = "appops set $pkg SET_MEDIA_KEY_LISTENER allow"
         val cmd3 = "appops set $pkg SYSTEM_ALERT_WINDOW allow"
 
-        if (isGranted) {
-            Thread {
+        gestureExecutor.execute {
+            if (isGranted) {
                 try {
                     Logger.log("Executing Shizuku grant commands...")
                     execCmd(cmd1)
@@ -185,17 +183,15 @@ object ShizukuManager {
                     execRootCmd(cmd2)
                     execRootCmd(cmd3)
                 }
-            }.start()
-        } else if (isRootAvailable) {
-            Thread {
+            } else if (isRootAvailable) {
                 Logger.log("Executing Root grant commands...")
                 execRootCmd(cmd1)
                 execRootCmd(cmd2)
                 execRootCmd(cmd3)
                 Logger.log("System MediaKey permissions granted via Root!")
-            }.start()
-        } else {
-            Logger.log("Cannot grant permissions: Neither Shizuku nor Root is granted", isError = true)
+            } else {
+                Logger.log("Cannot grant permissions: Neither Shizuku nor Root is granted", isError = true)
+            }
         }
     }
 
@@ -205,7 +201,7 @@ object ShizukuManager {
                 "newProcess",
                 Array<String>::class.java,
                 Array<String>::class.java,
-                String::class.java
+                String::class.java,
             )
             method.isAccessible = true
             method.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process
