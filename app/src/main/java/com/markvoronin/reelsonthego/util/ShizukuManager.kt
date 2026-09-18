@@ -6,8 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import rikka.shizuku.Shizuku
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.lang.reflect.Method
 import java.util.concurrent.Executors
 
 object ShizukuManager {
@@ -115,8 +114,7 @@ object ShizukuManager {
     private fun probeRootAvailable(): Boolean {
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            val exitCode = process.waitFor()
-            exitCode == 0
+            process.drainAndWaitFor() == 0
         } catch (_: Throwable) {
             false
         }
@@ -165,7 +163,7 @@ object ShizukuManager {
                     Logger.log("Executing Double Tap via Shizuku: $command")
                     val process = execShizuku(command)
                     if (process != null) {
-                        val exitCode = process.waitFor()
+                        val exitCode = process.drainAndWaitFor()
                         Logger.log("Shizuku doubleTap completed with exit code: $exitCode")
                     } else if (isRootAvailable) {
                         execRootCmd(command)
@@ -193,12 +191,7 @@ object ShizukuManager {
                     Logger.log("Executing via Shizuku: $command")
                     val process = execShizuku(command)
                     if (process != null) {
-                        val reader = BufferedReader(InputStreamReader(process.inputStream))
-                        var line: String?
-                        while (reader.readLine().also { line = it } != null) {
-                            Logger.log("Shizuku output: $line")
-                        }
-                        val exitCode = process.waitFor()
+                        val exitCode = process.drainAndWaitFor()
                         Logger.log("Shizuku swipe completed with exit code: $exitCode")
                     } else if (isRootAvailable) {
                         executeRootSwipe(command)
@@ -221,7 +214,7 @@ object ShizukuManager {
         try {
             Logger.log("Executing via Root (su): $command")
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-            val exitCode = process.waitFor()
+            val exitCode = process.drainAndWaitFor()
             Logger.log("Root swipe completed with exit code: $exitCode")
         } catch (e: Exception) {
             Logger.log("Root swipe failed: ${e.message}", isError = true)
@@ -270,15 +263,25 @@ object ShizukuManager {
         }
     }
 
-    private fun execShizuku(command: String): Process? {
-        return try {
-            val method = Shizuku::class.java.getDeclaredMethod(
+    private val newProcessMethod: Method? by lazy {
+        try {
+            Shizuku::class.java.getDeclaredMethod(
                 "newProcess",
                 Array<String>::class.java,
                 Array<String>::class.java,
                 String::class.java,
-            )
-            method.isAccessible = true
+            ).apply {
+                isAccessible = true
+            }
+        } catch (e: Exception) {
+            Logger.log("Error resolving Shizuku.newProcess method: ${e.message}", isError = true)
+            null
+        }
+    }
+
+    private fun execShizuku(command: String): Process? {
+        val method = newProcessMethod ?: return null
+        return try {
             method.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process
         } catch (e: Exception) {
             Logger.log("Shizuku exec error: ${e.message}", isError = true)
@@ -288,15 +291,35 @@ object ShizukuManager {
 
     private fun execCmd(command: String) {
         val process = execShizuku(command)
-        process?.waitFor()
+        process?.drainAndWaitFor()
     }
 
     private fun execRootCmd(command: String) {
         try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-            process.waitFor()
+            process.drainAndWaitFor()
         } catch (e: Exception) {
             Logger.log("Root exec error: ${e.message}", isError = true)
+        }
+    }
+
+    private fun Process.drainAndWaitFor(): Int {
+        return try {
+            val stdoutThread = Thread {
+                try { inputStream.use { it.readBytes() } } catch (_: Throwable) {}
+            }
+            val stderrThread = Thread {
+                try { errorStream.use { it.readBytes() } } catch (_: Throwable) {}
+            }
+            stdoutThread.start()
+            stderrThread.start()
+
+            val exitCode = waitFor()
+            stdoutThread.join(500)
+            stderrThread.join(500)
+            exitCode
+        } catch (_: Exception) {
+            -1
         }
     }
 }
