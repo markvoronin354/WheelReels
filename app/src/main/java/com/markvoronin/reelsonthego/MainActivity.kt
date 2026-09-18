@@ -147,6 +147,13 @@ fun MainScreen(
     var selectedSwipeDuration by remember { mutableLongStateOf(prefsRepository.swipeDurationMs) }
     var isGlobalSwipeEnabled by remember { mutableStateOf(prefsRepository.isGlobalSwipeEnabled) }
     var enabledPackages by remember { mutableStateOf(prefsRepository.enabledPackages) }
+    var appPrevActions by remember(isPrevDoubleTap) {
+        mutableStateOf(
+            PreferencesRepository.SUPPORTED_APPS.associate { app ->
+                app.packageName to prefsRepository.getPrevActionForPackage(app.packageName)
+            }
+        )
+    }
 
     // Service & Permission States
     var isMediaServiceRunning by remember { mutableStateOf(MediaButtonService.isRunning) }
@@ -470,8 +477,7 @@ fun MainScreen(
 
                         PreferencesRepository.SUPPORTED_APPS.forEachIndexed { index, app ->
                             val isAppEnabled = enabledPackages.contains(app.packageName)
-                            val currentPrevAction = prefsRepository.getPrevActionForPackage(app.packageName)
-                            var appPrevAction by remember(app.packageName, isPrevDoubleTap) { mutableStateOf(currentPrevAction) }
+                            val appPrevAction = appPrevActions[app.packageName] ?: (if (isPrevDoubleTap) PrevAction.LIKE else PrevAction.SWIPE_DOWN)
 
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                 Row(
@@ -514,7 +520,7 @@ fun MainScreen(
                                             FilterChip(
                                                 selected = isSelected,
                                                 onClick = {
-                                                    appPrevAction = action
+                                                    appPrevActions = appPrevActions + (app.packageName to action)
                                                     prefsRepository.setPrevActionForPackage(app.packageName, action)
                                                 },
                                                 label = {
