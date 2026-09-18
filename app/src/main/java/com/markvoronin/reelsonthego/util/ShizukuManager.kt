@@ -2,6 +2,9 @@ package com.markvoronin.reelsonthego.util
 
 import android.content.Context
 import android.content.pm.PackageManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -22,6 +25,15 @@ object ShizukuManager {
 
     @Volatile
     private var cachedIsRootAvailable: Boolean = false
+
+    private val _isAvailable = MutableStateFlow(false)
+    val isAvailableFlow: StateFlow<Boolean> = _isAvailable.asStateFlow()
+
+    private val _isGranted = MutableStateFlow(false)
+    val isGrantedFlow: StateFlow<Boolean> = _isGranted.asStateFlow()
+
+    private val _isRootAvailable = MutableStateFlow(false)
+    val isRootAvailableFlow: StateFlow<Boolean> = _isRootAvailable.asStateFlow()
 
     init {
         init()
@@ -55,62 +67,48 @@ object ShizukuManager {
     }
 
     val isAvailable: Boolean
-        get() {
-            return try {
-                val ping = Shizuku.pingBinder()
-                cachedIsAvailable = ping
-                ping
-            } catch (_: Throwable) {
-                cachedIsAvailable = false
-                false
-            }
-        }
+        get() = _isAvailable.value
 
     val isGranted: Boolean
-        get() {
-            return try {
-                if (!isAvailable) {
-                    cachedIsGranted = false
-                    false
-                } else {
-                    val granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-                    cachedIsGranted = granted
-                    granted
-                }
-            } catch (_: Throwable) {
-                cachedIsGranted = false
-                false
-            }
-        }
+        get() = _isGranted.value
 
     val isRootAvailable: Boolean
-        get() = cachedIsRootAvailable
+        get() = _isRootAvailable.value
+
+    fun refreshCapabilities(): Boolean {
+        val available = try {
+            Shizuku.pingBinder()
+        } catch (_: Throwable) {
+            false
+        }
+
+        val granted = try {
+            if (available) {
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+
+        val rootAvailable = probeRootAvailable()
+
+        cachedIsAvailable = available
+        cachedIsGranted = granted
+        cachedIsRootAvailable = rootAvailable
+
+        _isAvailable.value = available
+        _isGranted.value = granted
+        _isRootAvailable.value = rootAvailable
+
+        Logger.log("Shizuku capabilities updated: available=$available, granted=$granted, root=$rootAvailable")
+        return granted
+    }
 
     fun refreshCapabilitiesAsync() {
         capabilityExecutor.execute {
-            val available = try {
-                Shizuku.pingBinder()
-            } catch (_: Throwable) {
-                false
-            }
-
-            val granted = try {
-                if (available) {
-                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-                } else {
-                    false
-                }
-            } catch (_: Throwable) {
-                false
-            }
-
-            val rootAvailable = probeRootAvailable()
-
-            cachedIsAvailable = available
-            cachedIsGranted = granted
-            cachedIsRootAvailable = rootAvailable
-
-            Logger.log("Shizuku capabilities updated: available=$available, granted=$granted, root=$rootAvailable")
+            refreshCapabilities()
         }
     }
 
@@ -126,6 +124,9 @@ object ShizukuManager {
 
     fun requestPermission() {
         try {
+            if (!isAvailable) {
+                refreshCapabilities()
+            }
             if (isAvailable && !isGranted) {
                 Shizuku.requestPermission(REQUEST_CODE)
                 Logger.log("Requested Shizuku permission")

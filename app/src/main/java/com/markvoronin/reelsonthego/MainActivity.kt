@@ -159,8 +159,8 @@ fun MainScreen(
     // Service & Permission States
     var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context, ReelsAccessibilityService::class.java)) }
     var isMediaServiceRunning by remember { mutableStateOf(MediaButtonService.isRunning) }
-    var shizukuAvailable by remember { mutableStateOf(ShizukuManager.isAvailable) }
-    var shizukuGranted by remember { mutableStateOf(ShizukuManager.isGranted) }
+    val shizukuAvailable by ShizukuManager.isAvailableFlow.collectAsState()
+    val shizukuGranted by ShizukuManager.isGrantedFlow.collectAsState()
     var isBatteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
 
     // UI state
@@ -203,8 +203,7 @@ fun MainScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 isAccessibilityEnabled = isAccessibilityServiceEnabled(context, ReelsAccessibilityService::class.java)
                 isMediaServiceRunning = MediaButtonService.isRunning
-                shizukuAvailable = ShizukuManager.isAvailable
-                shizukuGranted = ShizukuManager.isGranted
+                ShizukuManager.refreshCapabilitiesAsync()
                 isBatteryOptIgnored = isIgnoringBatteryOptimizations(context)
             }
         }
