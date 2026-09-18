@@ -22,6 +22,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.view.KeyEvent
@@ -42,12 +43,20 @@ class MediaButtonService : Service() {
     private var isReceiverRegistered = false
     private lateinit var prefsRepository: PreferencesRepository
 
+    @Volatile
     private var currentForegroundPackage: String = ""
-    private val appMonitorHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var lastQueryTimestamp: Long = 0L
+
+    private var bgThread: HandlerThread? = null
+    private var bgHandler: Handler? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private val appMonitorRunnable = object : Runnable {
         override fun run() {
             checkForegroundApp()
-            appMonitorHandler.postDelayed(this, 1000L)
+            bgHandler?.postDelayed(this, 1000L)
         }
     }
 
@@ -60,14 +69,16 @@ class MediaButtonService : Service() {
                 }
                 Intent.ACTION_SCREEN_OFF -> {
                     Logger.log("Screen turned OFF -> Pausing polling & deactivating MediaSession for Deep Sleep")
-                    appMonitorHandler.removeCallbacks(appMonitorRunnable)
+                    bgHandler?.removeCallbacks(appMonitorRunnable)
+                    lastQueryTimestamp = 0L
                     deactivateMediaSession()
                 }
                 Intent.ACTION_SCREEN_ON,
                 Intent.ACTION_USER_PRESENT -> {
                     Logger.log("Screen turned ON -> Resuming background monitoring")
-                    appMonitorHandler.removeCallbacks(appMonitorRunnable)
-                    appMonitorHandler.post(appMonitorRunnable)
+                    bgHandler?.removeCallbacks(appMonitorRunnable)
+                    lastQueryTimestamp = 0L
+                    bgHandler?.post(appMonitorRunnable)
                 }
             }
         }
@@ -86,8 +97,24 @@ class MediaButtonService : Service() {
         // Auto-grant permissions via Shizuku if connected
         ShizukuManager.grantMediaKeyPermissions(this)
 
-        // Start foreground app monitoring
-        appMonitorHandler.post(appMonitorRunnable)
+        // Start foreground app monitoring on background thread
+        startAppMonitorThread()
+    }
+
+    private fun startAppMonitorThread() {
+        if (bgThread == null) {
+            bgThread = HandlerThread("AppMonitorThread").apply { start() }
+            bgHandler = Handler(bgThread!!.looper)
+        }
+        bgHandler?.removeCallbacks(appMonitorRunnable)
+        bgHandler?.post(appMonitorRunnable)
+    }
+
+    private fun stopAppMonitorThread() {
+        bgHandler?.removeCallbacks(appMonitorRunnable)
+        bgThread?.quitSafely()
+        bgThread = null
+        bgHandler = null
     }
 
     private fun checkForegroundApp() {
@@ -99,15 +126,17 @@ class MediaButtonService : Service() {
         currentForegroundPackage = foregroundPkg
         val isTargetApp = prefsRepository.isGlobalSwipeEnabled || prefsRepository.isPackageEnabled(foregroundPkg)
 
-        if (isTargetApp) {
-            if (mediaSession?.isActive != true) {
-                Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession & AudioFocus")
-                activateMediaSession()
-            }
-        } else {
-            if (mediaSession?.isActive == true) {
-                Logger.log("Non-Target App in Foreground ($foregroundPkg) -> Deactivating MediaSession & AudioFocus")
-                deactivateMediaSession()
+        mainHandler.post {
+            if (isTargetApp) {
+                if (mediaSession?.isActive != true) {
+                    Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession & AudioFocus")
+                    activateMediaSession()
+                }
+            } else {
+                if (mediaSession?.isActive == true) {
+                    Logger.log("Non-Target App in Foreground ($foregroundPkg) -> Deactivating MediaSession & AudioFocus")
+                    deactivateMediaSession()
+                }
             }
         }
     }
@@ -115,8 +144,14 @@ class MediaButtonService : Service() {
     private fun getForegroundPackageName(): String? {
         val usm = getSystemService(USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 60000L
+        val startTime = if (lastQueryTimestamp == 0L) {
+            endTime - 60000L
+        } else {
+            (lastQueryTimestamp - 1000L).coerceAtLeast(endTime - 60000L)
+        }
+
         val events = usm.queryEvents(startTime, endTime) ?: return null
+        lastQueryTimestamp = endTime
 
         var lastResumedPkg: String? = null
         val event = UsageEvents.Event()
@@ -252,7 +287,7 @@ class MediaButtonService : Service() {
 
     private fun isCurrentAppTargeted(): Boolean {
         if (prefsRepository.isGlobalSwipeEnabled) return true
-        val pkg = getForegroundPackageName() ?: currentForegroundPackage
+        val pkg = currentForegroundPackage
         if (pkg.isEmpty()) return false
         return prefsRepository.isPackageEnabled(pkg)
     }
@@ -459,13 +494,13 @@ class MediaButtonService : Service() {
 
         startForeground(NOTIFICATION_ID, buildNotification())
         isRunning = true
-        checkForegroundApp()
+        startAppMonitorThread()
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        appMonitorHandler.removeCallbacks(appMonitorRunnable)
+        stopAppMonitorThread()
         unregisterSystemReceiver()
         deactivateMediaSession()
         mediaSession?.release()
