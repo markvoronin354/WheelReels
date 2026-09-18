@@ -213,6 +213,24 @@ fun MainScreen(
         }
     }
 
+    val handleShizukuClick = {
+        if (shizukuAvailable && !shizukuGranted) {
+            ShizukuManager.requestPermission()
+        } else if (shizukuGranted) {
+            ShizukuManager.grantMediaKeyPermissions(context)
+            Toast.makeText(context, "Granted MediaKey permissions via Shizuku", Toast.LENGTH_SHORT).show()
+        } else {
+            val granted = ShizukuManager.refreshCapabilities()
+            if (granted) {
+                Toast.makeText(context, "Shizuku connected & granted!", Toast.LENGTH_SHORT).show()
+            } else if (ShizukuManager.isAvailable) {
+                ShizukuManager.requestPermission()
+            } else {
+                Toast.makeText(context, "Shizuku app is not running", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -337,7 +355,8 @@ fun MainScreen(
                         MediaButtonService.stopService(context)
                         isMediaServiceRunning = false
                     }
-                }
+                },
+                onShizukuClick = handleShizukuClick
             )
 
             // Swipe Speed / Duration Selector Card
@@ -610,16 +629,7 @@ fun MainScreen(
                         title = "Shizuku / ADB Touch Injection",
                         statusText = if (shizukuGranted) "Granted" else if (shizukuAvailable) "Available" else "Optional",
                         isOk = shizukuGranted,
-                        onClick = {
-                            if (shizukuAvailable && !shizukuGranted) {
-                                ShizukuManager.requestPermission()
-                            } else if (shizukuGranted) {
-                                ShizukuManager.grantMediaKeyPermissions(context)
-                                Toast.makeText(context, "Granted MediaKey permissions via Shizuku", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Shizuku app is not running", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                        onClick = handleShizukuClick
                     )
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -889,7 +899,8 @@ private fun HeroMasterCard(
     shizukuAvailable: Boolean,
     shizukuGranted: Boolean,
     onOpenAccessibility: () -> Unit,
-    onToggleMediaService: () -> Unit
+    onToggleMediaService: () -> Unit,
+    onShizukuClick: () -> Unit
 ) {
     val containerColor = if (isEnabled) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
@@ -969,7 +980,7 @@ private fun HeroMasterCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatusBadgeChip(
-                    label = if (isAccessibilityEnabled) "Accessibility OK" else "Accessibility Required",
+                    label = if (isAccessibilityEnabled) "Accessibility OK" else "Accessibility",
                     isOk = isAccessibilityEnabled,
                     onClick = onOpenAccessibility,
                     modifier = Modifier.weight(1f)
@@ -982,14 +993,12 @@ private fun HeroMasterCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                if (shizukuAvailable || shizukuGranted) {
-                    StatusBadgeChip(
-                        label = if (shizukuGranted) "Shizuku OK" else "Shizuku Ready",
-                        isOk = shizukuGranted,
-                        onClick = {},
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                StatusBadgeChip(
+                    label = if (shizukuGranted) "Shizuku OK" else if (shizukuAvailable) "Shizuku Ready" else "Shizuku",
+                    isOk = shizukuGranted,
+                    onClick = onShizukuClick,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
