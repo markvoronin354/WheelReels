@@ -16,6 +16,14 @@ object ShizukuManager {
     private val gestureExecutor = Executors.newSingleThreadExecutor()
     private val capabilityExecutor = Executors.newSingleThreadExecutor()
 
+    private val gestureQueueLock = Any()
+
+    @Volatile
+    private var pendingGestureRunnable: Runnable? = null
+
+    @Volatile
+    private var isGestureExecuting: Boolean = false
+
     @Volatile
     private var cachedIsAvailable: Boolean = false
 
@@ -157,7 +165,7 @@ object ShizukuManager {
         val y = height / 2
         val command = "input tap $x $y && sleep 0.08 && input tap $x $y"
 
-        gestureExecutor.execute {
+        enqueueGesture {
             if (isGranted) {
                 try {
                     Logger.log("Executing Double Tap via Shizuku: $command")
@@ -185,7 +193,7 @@ object ShizukuManager {
     private fun executeSwipe(startX: Int, startY: Int, endX: Int, endY: Int, durationMs: Long) {
         val command = "input swipe $startX $startY $endX $endY $durationMs"
 
-        gestureExecutor.execute {
+        enqueueGesture {
             if (isGranted) {
                 try {
                     Logger.log("Executing via Shizuku: $command")
@@ -210,6 +218,49 @@ object ShizukuManager {
         }
     }
 
+    private fun enqueueGesture(runnable: Runnable) {
+        synchronized(gestureQueueLock) {
+            if (isGestureExecuting && pendingGestureRunnable != null) {
+                Logger.log("Dropping stale pending gesture in favor of newest gesture")
+            }
+            pendingGestureRunnable = runnable
+            if (!isGestureExecuting) {
+                isGestureExecuting = true
+                scheduleNextGesture()
+            }
+        }
+    }
+
+    private fun scheduleNextGesture() {
+        gestureExecutor.execute {
+            val nextRunnable: Runnable?
+            synchronized(gestureQueueLock) {
+                nextRunnable = pendingGestureRunnable
+                pendingGestureRunnable = null
+            }
+
+            if (nextRunnable != null) {
+                try {
+                    nextRunnable.run()
+                } catch (e: Throwable) {
+                    Logger.log("Error executing gesture: ${e.message}", isError = true)
+                } finally {
+                    synchronized(gestureQueueLock) {
+                        if (pendingGestureRunnable != null) {
+                            scheduleNextGesture()
+                        } else {
+                            isGestureExecuting = false
+                        }
+                    }
+                }
+            } else {
+                synchronized(gestureQueueLock) {
+                    isGestureExecuting = false
+                }
+            }
+        }
+    }
+
     private fun executeRootSwipe(command: String) {
         try {
             Logger.log("Executing via Root (su): $command")
@@ -229,7 +280,7 @@ object ShizukuManager {
         val cmd4 = "appops set $pkg GET_USAGE_STATS allow"
         val cmd5 = "pm grant $pkg android.permission.PACKAGE_USAGE_STATS"
 
-        gestureExecutor.execute {
+        capabilityExecutor.execute {
             if (isGranted) {
                 try {
                     Logger.log("Executing Shizuku grant commands...")
