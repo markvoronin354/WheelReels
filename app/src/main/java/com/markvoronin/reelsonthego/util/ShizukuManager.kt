@@ -12,34 +12,56 @@ object ShizukuManager {
     private const val REQUEST_CODE = 2001
     private var isListenersRegistered = false
     private val gestureExecutor = Executors.newSingleThreadExecutor()
+    private val capabilityExecutor = Executors.newSingleThreadExecutor()
+
+    @Volatile
+    private var cachedIsAvailable: Boolean = false
+
+    @Volatile
+    private var cachedIsGranted: Boolean = false
+
+    @Volatile
+    private var cachedIsRootAvailable: Boolean = false
+
+    init {
+        init()
+    }
 
     fun init() {
-        if (isListenersRegistered) return
-        try {
-            Shizuku.addBinderReceivedListener {
-                Logger.log("Shizuku/Shevery Binder received & connected!")
-            }
-            Shizuku.addBinderDeadListener {
-                Logger.log("Shizuku/Shevery Binder died", isError = true)
-            }
-            Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
-                if (requestCode == REQUEST_CODE) {
-                    val granted = grantResult == PackageManager.PERMISSION_GRANTED
-                    Logger.log("Shizuku permission result: granted=$granted")
+        if (!isListenersRegistered) {
+            try {
+                Shizuku.addBinderReceivedListener {
+                    Logger.log("Shizuku/Shevery Binder received & connected!")
+                    refreshCapabilitiesAsync()
                 }
+                Shizuku.addBinderDeadListener {
+                    Logger.log("Shizuku/Shevery Binder died", isError = true)
+                    refreshCapabilitiesAsync()
+                }
+                Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
+                    if (requestCode == REQUEST_CODE) {
+                        val granted = grantResult == PackageManager.PERMISSION_GRANTED
+                        Logger.log("Shizuku permission result: granted=$granted")
+                        refreshCapabilitiesAsync()
+                    }
+                }
+                isListenersRegistered = true
+                Logger.log("ShizukuManager initialized")
+            } catch (e: Throwable) {
+                Logger.log("Error initializing Shizuku listeners: ${e.message}", isError = true)
             }
-            isListenersRegistered = true
-            Logger.log("ShizukuManager initialized (Binder status: ${if (isAvailable) "Available" else "Unavailable"})")
-        } catch (e: Throwable) {
-            Logger.log("Error initializing Shizuku listeners: ${e.message}", isError = true)
         }
+        refreshCapabilitiesAsync()
     }
 
     val isAvailable: Boolean
         get() {
             return try {
-                Shizuku.pingBinder()
+                val ping = Shizuku.pingBinder()
+                cachedIsAvailable = ping
+                ping
             } catch (_: Throwable) {
+                cachedIsAvailable = false
                 false
             }
         }
@@ -47,23 +69,60 @@ object ShizukuManager {
     val isGranted: Boolean
         get() {
             return try {
-                if (!isAvailable) false
-                else Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                if (!isAvailable) {
+                    cachedIsGranted = false
+                    false
+                } else {
+                    val granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                    cachedIsGranted = granted
+                    granted
+                }
             } catch (_: Throwable) {
+                cachedIsGranted = false
                 false
             }
         }
 
     val isRootAvailable: Boolean
-        get() {
-            return try {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-                val exitCode = process.waitFor()
-                exitCode == 0
+        get() = cachedIsRootAvailable
+
+    fun refreshCapabilitiesAsync() {
+        capabilityExecutor.execute {
+            val available = try {
+                Shizuku.pingBinder()
             } catch (_: Throwable) {
                 false
             }
+
+            val granted = try {
+                if (available) {
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                } else {
+                    false
+                }
+            } catch (_: Throwable) {
+                false
+            }
+
+            val rootAvailable = probeRootAvailable()
+
+            cachedIsAvailable = available
+            cachedIsGranted = granted
+            cachedIsRootAvailable = rootAvailable
+
+            Logger.log("Shizuku capabilities updated: available=$available, granted=$granted, root=$rootAvailable")
         }
+    }
+
+    private fun probeRootAvailable(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val exitCode = process.waitFor()
+            exitCode == 0
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     fun requestPermission() {
         try {
@@ -107,11 +166,14 @@ object ShizukuManager {
                     if (process != null) {
                         val exitCode = process.waitFor()
                         Logger.log("Shizuku doubleTap completed with exit code: $exitCode")
-                    } else {
+                    } else if (isRootAvailable) {
                         execRootCmd(command)
                     }
                 } catch (e: Exception) {
                     Logger.log("Shizuku doubleTap error: ${e.message}", isError = true)
+                    if (isRootAvailable) {
+                        execRootCmd(command)
+                    }
                 }
             } else if (isRootAvailable) {
                 execRootCmd(command)
@@ -137,12 +199,14 @@ object ShizukuManager {
                         }
                         val exitCode = process.waitFor()
                         Logger.log("Shizuku swipe completed with exit code: $exitCode")
-                    } else {
+                    } else if (isRootAvailable) {
                         executeRootSwipe(command)
                     }
                 } catch (e: Exception) {
                     Logger.log("Shizuku swipe error, trying Root: ${e.message}", isError = true)
-                    executeRootSwipe(command)
+                    if (isRootAvailable) {
+                        executeRootSwipe(command)
+                    }
                 }
             } else if (isRootAvailable) {
                 executeRootSwipe(command)
@@ -179,9 +243,11 @@ object ShizukuManager {
                     Logger.log("System MediaKey permissions granted via Shizuku!")
                 } catch (e: Exception) {
                     Logger.log("Error granting via Shizuku, trying Root: ${e.message}", isError = true)
-                    execRootCmd(cmd1)
-                    execRootCmd(cmd2)
-                    execRootCmd(cmd3)
+                    if (isRootAvailable) {
+                        execRootCmd(cmd1)
+                        execRootCmd(cmd2)
+                        execRootCmd(cmd3)
+                    }
                 }
             } else if (isRootAvailable) {
                 Logger.log("Executing Root grant commands...")
