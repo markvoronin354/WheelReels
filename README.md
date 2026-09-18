@@ -30,8 +30,8 @@
    ```
 2. Install the APK on your Android device.
 3. Open **WheelReels**:
-   - Turn ON **Accessibility Permission** (or authorize **Shizuku / Shevery**).
-   - Turn ON the **Bluetooth MediaSession Listener** switch.
+   - Authorize **Shizuku / Shevery** for ADB touch injection.
+   - Turn ON the **Steering Wheel Controls** master switch.
 4. Connect your phone to your car's Bluetooth audio.
 5. Open Instagram Reels, TikTok, or Shorts and press the Next / Prev buttons on your steering wheel!
 
@@ -39,8 +39,7 @@
 
 ## 🛠️ Architecture
 
-- **`ReelsAccessibilityService`**: Listens for hardware key events and dispatches vertical swipe gestures (`dispatchGesture`).
-- **`MediaButtonService`**: Foreground service holding `MediaSession` and AudioFocus to capture Bluetooth AVRCP commands from car head units.
+- **`MediaButtonService`**: Foreground service holding `MediaSession` & `AudioFocus` to capture Bluetooth AVRCP commands from car head units and monitor target apps via `UsageStatsManager`.
 - **`ShizukuManager`**: Executes privileged ADB shell commands (`input swipe`) when authorized via Shizuku/Shevery or Root (`su`).
 - **`PreferencesRepository`**: Stores app settings and package selections using `SharedPreferences`.
 

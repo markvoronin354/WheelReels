@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -19,13 +21,15 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import com.markvoronin.reelsonthego.MainActivity
-import com.markvoronin.reelsonthego.data.PrevAction
 import com.markvoronin.reelsonthego.R
 import com.markvoronin.reelsonthego.data.PreferencesRepository
+import com.markvoronin.reelsonthego.data.PrevAction
 import com.markvoronin.reelsonthego.util.Logger
 import com.markvoronin.reelsonthego.util.ShizukuManager
 
@@ -38,6 +42,15 @@ class MediaButtonService : Service() {
     private var isReceiverRegistered = false
     private lateinit var prefsRepository: PreferencesRepository
 
+    private var currentForegroundPackage: String = ""
+    private val appMonitorHandler = Handler(Looper.getMainLooper())
+    private val appMonitorRunnable = object : Runnable {
+        override fun run() {
+            checkForegroundApp()
+            appMonitorHandler.postDelayed(this, 1000L)
+        }
+    }
+
     private val systemReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -46,8 +59,15 @@ class MediaButtonService : Service() {
                     stopSelf()
                 }
                 Intent.ACTION_SCREEN_OFF -> {
-                    Logger.log("Screen turned OFF -> Stopping MediaButtonService for Deep Sleep")
-                    stopSelf()
+                    Logger.log("Screen turned OFF -> Pausing polling & deactivating MediaSession for Deep Sleep")
+                    appMonitorHandler.removeCallbacks(appMonitorRunnable)
+                    deactivateMediaSession()
+                }
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    Logger.log("Screen turned ON -> Resuming background monitoring")
+                    appMonitorHandler.removeCallbacks(appMonitorRunnable)
+                    appMonitorHandler.post(appMonitorRunnable)
                 }
             }
         }
@@ -56,13 +76,60 @@ class MediaButtonService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        Logger.log("MediaButtonService created (App-Dynamic Mode)")
+        Logger.log("MediaButtonService created (App-Dynamic Mode via UsageStats)")
         prefsRepository = PreferencesRepository(this)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
         initMediaSession()
         registerSystemReceiver()
-        activateMediaSession()
+
+        // Auto-grant permissions via Shizuku if connected
+        ShizukuManager.grantMediaKeyPermissions(this)
+
+        // Start foreground app monitoring
+        appMonitorHandler.post(appMonitorRunnable)
+    }
+
+    private fun checkForegroundApp() {
+        if (!prefsRepository.isServiceEnabled) return
+
+        val foregroundPkg = getForegroundPackageName() ?: currentForegroundPackage
+        if (foregroundPkg.isEmpty()) return
+
+        currentForegroundPackage = foregroundPkg
+        val isTargetApp = prefsRepository.isGlobalSwipeEnabled || prefsRepository.isPackageEnabled(foregroundPkg)
+
+        if (isTargetApp) {
+            if (mediaSession?.isActive != true) {
+                Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession & AudioFocus")
+                activateMediaSession()
+            }
+        } else {
+            if (mediaSession?.isActive == true) {
+                Logger.log("Non-Target App in Foreground ($foregroundPkg) -> Deactivating MediaSession & AudioFocus")
+                deactivateMediaSession()
+            }
+        }
+    }
+
+    private fun getForegroundPackageName(): String? {
+        val usm = getSystemService(USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - 60000L
+        val events = usm.queryEvents(startTime, endTime) ?: return null
+
+        var lastResumedPkg: String? = null
+        val event = UsageEvents.Event()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                val pkg = event.packageName
+                if (pkg != null && !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
+                    lastResumedPkg = pkg
+                }
+            }
+        }
+        return lastResumedPkg
     }
 
     private fun registerSystemReceiver() {
@@ -70,6 +137,8 @@ class MediaButtonService : Service() {
             val filter = IntentFilter().apply {
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(systemReceiver, filter, RECEIVER_EXPORTED)
@@ -77,7 +146,7 @@ class MediaButtonService : Service() {
                 registerReceiver(systemReceiver, filter)
             }
             isReceiverRegistered = true
-            Logger.log("Registered system receiver for Screen Off & Bluetooth Disconnect")
+            Logger.log("Registered system receiver for Screen Off/On & Bluetooth Disconnect")
         }
     }
 
@@ -178,44 +247,52 @@ class MediaButtonService : Service() {
     }
 
     private fun getActivePrevAction(): PrevAction {
-        val service = ReelsAccessibilityService.getInstance()
-        val activePkg = service?.currentPackageName ?: ""
-        return prefsRepository.getPrevActionForPackage(activePkg)
+        return prefsRepository.getPrevActionForPackage(currentForegroundPackage)
+    }
+
+    private fun isCurrentAppTargeted(): Boolean {
+        if (prefsRepository.isGlobalSwipeEnabled) return true
+        val pkg = getForegroundPackageName() ?: currentForegroundPackage
+        if (pkg.isEmpty()) return false
+        return prefsRepository.isPackageEnabled(pkg)
     }
 
     private fun performSwipeUp() {
-        val service = ReelsAccessibilityService.getInstance()
-        if (service != null) {
-            service.swipeUp(force = true)
-        } else if (ShizukuManager.isGranted) {
+        if (!isCurrentAppTargeted()) {
+            Logger.log("Swipe Up ignored: Current app ($currentForegroundPackage) is not an enabled target app")
+            return
+        }
+        if (ShizukuManager.isGranted) {
             val displayMetrics = resources.displayMetrics
             ShizukuManager.swipeUp(displayMetrics.widthPixels, displayMetrics.heightPixels, prefsRepository.swipeDurationMs)
         } else {
-            Logger.log("Swipe Up failed: Neither Accessibility Service nor Shizuku is active!", isError = true)
+            Logger.log("Swipe Up failed: Shizuku permission is not granted!", isError = true)
         }
     }
 
     private fun performSwipeDown() {
-        val service = ReelsAccessibilityService.getInstance()
-        if (service != null) {
-            service.swipeDown(force = true)
-        } else if (ShizukuManager.isGranted) {
+        if (!isCurrentAppTargeted()) {
+            Logger.log("Swipe Down ignored: Current app ($currentForegroundPackage) is not an enabled target app")
+            return
+        }
+        if (ShizukuManager.isGranted) {
             val displayMetrics = resources.displayMetrics
             ShizukuManager.swipeDown(displayMetrics.widthPixels, displayMetrics.heightPixels, prefsRepository.swipeDurationMs)
         } else {
-            Logger.log("Swipe Down failed: Neither Accessibility Service nor Shizuku is active!", isError = true)
+            Logger.log("Swipe Down failed: Shizuku permission is not granted!", isError = true)
         }
     }
 
     private fun performDoubleTap() {
-        val service = ReelsAccessibilityService.getInstance()
-        if (service != null) {
-            service.doubleTap(force = true)
-        } else if (ShizukuManager.isGranted) {
+        if (!isCurrentAppTargeted()) {
+            Logger.log("Double Tap ignored: Current app ($currentForegroundPackage) is not an enabled target app")
+            return
+        }
+        if (ShizukuManager.isGranted) {
             val displayMetrics = resources.displayMetrics
             ShizukuManager.doubleTap(displayMetrics.widthPixels, displayMetrics.heightPixels)
         } else {
-            Logger.log("Double Tap failed: Neither Accessibility Service nor Shizuku is active!", isError = true)
+            Logger.log("Double Tap failed: Shizuku permission is not granted!", isError = true)
         }
     }
 
@@ -358,13 +435,14 @@ class MediaButtonService : Service() {
         }
 
         startForeground(NOTIFICATION_ID, buildNotification())
-        activateMediaSession()
         isRunning = true
+        checkForegroundApp()
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        appMonitorHandler.removeCallbacks(appMonitorRunnable)
         unregisterSystemReceiver()
         deactivateMediaSession()
         mediaSession?.release()
@@ -431,6 +509,19 @@ class MediaButtonService : Service() {
 
         var isRunning: Boolean = false
             private set
+
+        private val TRANSIENT_SYSTEM_PACKAGES = setOf(
+            "android",
+            "com.android.systemui",
+            "com.google.android.inputmethod.latin",
+            "com.samsung.android.honeyboard",
+            "com.sec.android.inputmethod",
+            "com.google.android.gms",
+            "com.google.android.permissioncontroller",
+            "com.android.permissioncontroller",
+            "com.google.android.setupwizard",
+            "com.google.android.as"
+        )
 
         fun startService(context: Context) {
             val intent = Intent(context, MediaButtonService::class.java).apply {

@@ -1,7 +1,6 @@
 package com.markvoronin.reelsonthego
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -106,7 +105,6 @@ import com.markvoronin.reelsonthego.data.AppThemeMode
 import com.markvoronin.reelsonthego.data.PreferencesRepository
 import com.markvoronin.reelsonthego.data.PrevAction
 import com.markvoronin.reelsonthego.service.MediaButtonService
-import com.markvoronin.reelsonthego.service.ReelsAccessibilityService
 import com.markvoronin.reelsonthego.ui.theme.ReelsWhileDrivingTheme
 import com.markvoronin.reelsonthego.ui.theme.StatusAmber
 import com.markvoronin.reelsonthego.ui.theme.StatusGreen
@@ -157,7 +155,6 @@ fun MainScreen(
     var enabledPackages by remember { mutableStateOf(prefsRepository.enabledPackages) }
 
     // Service & Permission States
-    var isAccessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context, ReelsAccessibilityService::class.java)) }
     var isMediaServiceRunning by remember { mutableStateOf(MediaButtonService.isRunning) }
     val shizukuAvailable by ShizukuManager.isAvailableFlow.collectAsState()
     val shizukuGranted by ShizukuManager.isGrantedFlow.collectAsState()
@@ -201,7 +198,6 @@ fun MainScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isAccessibilityEnabled = isAccessibilityServiceEnabled(context, ReelsAccessibilityService::class.java)
                 isMediaServiceRunning = MediaButtonService.isRunning
                 ShizukuManager.refreshCapabilitiesAsync()
                 isBatteryOptIgnored = isIgnoringBatteryOptimizations(context)
@@ -330,14 +326,9 @@ fun MainScreen(
                     isMasterEnabled = enabled
                     prefsRepository.isServiceEnabled = enabled
                 },
-                isAccessibilityEnabled = isAccessibilityEnabled,
                 isMediaServiceRunning = isMediaServiceRunning,
                 shizukuAvailable = shizukuAvailable,
                 shizukuGranted = shizukuGranted,
-                onOpenAccessibility = {
-                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    context.startActivity(intent)
-                },
                 onToggleMediaService = {
                     if (!isMediaServiceRunning) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -584,19 +575,6 @@ fun MainScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Accessibility Service Status
-                    PermissionTileRow(
-                        title = "Accessibility Gesture Dispatcher",
-                        statusText = if (isAccessibilityEnabled) "Active" else "Required",
-                        isOk = isAccessibilityEnabled,
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            context.startActivity(intent)
-                        }
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
                     // Bluetooth Listener Service Status
                     PermissionTileRow(
                         title = "Bluetooth Media Listener",
@@ -676,14 +654,11 @@ fun MainScreen(
                     ) {
                         FilledTonalButton(
                             onClick = {
-                                val service = ReelsAccessibilityService.getInstance()
-                                if (service != null) {
-                                    service.swipeUp(force = true)
-                                } else if (ShizukuManager.isGranted) {
+                                if (ShizukuManager.isGranted) {
                                     val dm = context.resources.displayMetrics
                                     ShizukuManager.swipeUp(dm.widthPixels, dm.heightPixels, selectedSwipeDuration)
                                 } else {
-                                    Toast.makeText(context, "Enable Accessibility first!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Shizuku permission required!", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -694,14 +669,11 @@ fun MainScreen(
 
                         FilledTonalButton(
                             onClick = {
-                                val service = ReelsAccessibilityService.getInstance()
-                                if (service != null) {
-                                    service.swipeDown(force = true)
-                                } else if (ShizukuManager.isGranted) {
+                                if (ShizukuManager.isGranted) {
                                     val dm = context.resources.displayMetrics
                                     ShizukuManager.swipeDown(dm.widthPixels, dm.heightPixels, selectedSwipeDuration)
                                 } else {
-                                    Toast.makeText(context, "Enable Accessibility first!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Shizuku permission required!", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -712,14 +684,11 @@ fun MainScreen(
 
                         FilledTonalButton(
                             onClick = {
-                                val service = ReelsAccessibilityService.getInstance()
-                                if (service != null) {
-                                    service.doubleTap(force = true)
-                                } else if (ShizukuManager.isGranted) {
+                                if (ShizukuManager.isGranted) {
                                     val dm = context.resources.displayMetrics
                                     ShizukuManager.doubleTap(dm.widthPixels, dm.heightPixels)
                                 } else {
-                                    Toast.makeText(context, "Enable Accessibility first!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Shizuku permission required!", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -894,11 +863,9 @@ fun MainScreen(
 private fun HeroMasterCard(
     isEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
-    isAccessibilityEnabled: Boolean,
     isMediaServiceRunning: Boolean,
     shizukuAvailable: Boolean,
     shizukuGranted: Boolean,
-    onOpenAccessibility: () -> Unit,
     onToggleMediaService: () -> Unit,
     onShizukuClick: () -> Unit
 ) {
@@ -979,13 +946,6 @@ private fun HeroMasterCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StatusBadgeChip(
-                    label = if (isAccessibilityEnabled) "Accessibility OK" else "Accessibility",
-                    isOk = isAccessibilityEnabled,
-                    onClick = onOpenAccessibility,
-                    modifier = Modifier.weight(1f)
-                )
-
                 StatusBadgeChip(
                     label = if (isMediaServiceRunning) "Listener Active" else "Start Listener",
                     isOk = isMediaServiceRunning,
@@ -1173,26 +1133,6 @@ private fun HelpStepItem(
             )
         }
     }
-}
-
-private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
-    val expectedComponentName = ComponentName(context, serviceClass)
-    val enabledServicesSetting = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-    ) ?: return false
-
-    val colonSplitter = TextUtils.SimpleStringSplitter(':')
-    colonSplitter.setString(enabledServicesSetting)
-
-    while (colonSplitter.hasNext()) {
-        val componentNameString = colonSplitter.next()
-        val enabledService = ComponentName.unflattenFromString(componentNameString)
-        if (enabledService != null && enabledService == expectedComponentName) {
-            return true
-        }
-    }
-    return false
 }
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean {

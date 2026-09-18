@@ -233,6 +233,8 @@ object ShizukuManager {
         val cmd1 = "pm grant $pkg android.permission.SET_MEDIA_KEY_LISTENER"
         val cmd2 = "appops set $pkg SET_MEDIA_KEY_LISTENER allow"
         val cmd3 = "appops set $pkg SYSTEM_ALERT_WINDOW allow"
+        val cmd4 = "appops set $pkg GET_USAGE_STATS allow"
+        val cmd5 = "pm grant $pkg android.permission.PACKAGE_USAGE_STATS"
 
         gestureExecutor.execute {
             if (isGranted) {
@@ -241,13 +243,17 @@ object ShizukuManager {
                     execCmd(cmd1)
                     execCmd(cmd2)
                     execCmd(cmd3)
-                    Logger.log("System MediaKey permissions granted via Shizuku!")
+                    execCmd(cmd4)
+                    execCmd(cmd5)
+                    Logger.log("System MediaKey & UsageStats permissions granted via Shizuku!")
                 } catch (e: Exception) {
                     Logger.log("Error granting via Shizuku, trying Root: ${e.message}", isError = true)
                     if (isRootAvailable) {
                         execRootCmd(cmd1)
                         execRootCmd(cmd2)
                         execRootCmd(cmd3)
+                        execRootCmd(cmd4)
+                        execRootCmd(cmd5)
                     }
                 }
             } else if (isRootAvailable) {
@@ -255,7 +261,9 @@ object ShizukuManager {
                 execRootCmd(cmd1)
                 execRootCmd(cmd2)
                 execRootCmd(cmd3)
-                Logger.log("System MediaKey permissions granted via Root!")
+                execRootCmd(cmd4)
+                execRootCmd(cmd5)
+                Logger.log("System MediaKey & UsageStats permissions granted via Root!")
             } else {
                 Logger.log("Cannot grant permissions: Neither Shizuku nor Root is granted", isError = true)
             }
