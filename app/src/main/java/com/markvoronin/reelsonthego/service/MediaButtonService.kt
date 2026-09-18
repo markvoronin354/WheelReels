@@ -297,6 +297,8 @@ class MediaButtonService : Service() {
     }
 
     private fun activateMediaSession() {
+        if (mediaSession?.isActive == true) return
+
         requestAudioFocus()
         startSilentAudio()
 
@@ -320,6 +322,8 @@ class MediaButtonService : Service() {
     }
 
     private fun deactivateMediaSession() {
+        if (mediaSession?.isActive == false && silentAudioTrack == null) return
+
         stopSilentAudio()
         abandonAudioFocus()
         val state = PlaybackState.Builder()
