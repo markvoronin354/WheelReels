@@ -71,6 +71,7 @@ class MediaButtonService : Service() {
                     Logger.log("Screen turned OFF -> Pausing polling & deactivating MediaSession for Deep Sleep")
                     bgHandler?.removeCallbacks(appMonitorRunnable)
                     lastQueryTimestamp = 0L
+                    currentForegroundPackage = ""
                     deactivateMediaSession()
                 }
                 Intent.ACTION_SCREEN_ON,
@@ -142,29 +143,73 @@ class MediaButtonService : Service() {
     }
 
     private fun getForegroundPackageName(): String? {
+        // 1. Shizuku Direct Window Focus Path (Fastest & Most Accurate when Shizuku is active)
+        if (ShizukuManager.isGranted) {
+            val shizukuTopPkg = ShizukuManager.getTopPackageName()
+            if (!shizukuTopPkg.isNullOrEmpty()) {
+                return shizukuTopPkg
+            }
+        }
+
+        // 2. UsageStatsManager Query with a 15-second rolling window overlap to prevent missing tight transitions
         val usm = getSystemService(USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
         val endTime = System.currentTimeMillis()
         val startTime = if (lastQueryTimestamp == 0L) {
             endTime - 60000L
         } else {
-            (lastQueryTimestamp - 1000L).coerceAtLeast(endTime - 60000L)
+            (lastQueryTimestamp - 15000L).coerceAtLeast(endTime - 60000L)
         }
 
-        val events = usm.queryEvents(startTime, endTime) ?: return null
+        val events = usm.queryEvents(startTime, endTime)
         lastQueryTimestamp = endTime
 
         var lastResumedPkg: String? = null
-        val event = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                val pkg = event.packageName
-                if (pkg != null && !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
-                    lastResumedPkg = pkg
+        if (events != null) {
+            val event = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                    val pkg = event.packageName
+                    if (pkg != null && !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
+                        lastResumedPkg = pkg
+                    }
                 }
             }
         }
-        return lastResumedPkg
+
+        if (lastResumedPkg != null) {
+            return lastResumedPkg
+        }
+
+        // 3. Robust Fallback: queryUsageStats (maxByOrNull lastTimeUsed)
+        // Catches apps (like Instagram) that were opened minutes ago and remained in foreground
+        // without emitting new ACTIVITY_RESUMED events after unlocking/waking from idle.
+        try {
+            val stats = usm.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                endTime - 1000 * 60 * 10,
+                endTime
+            )
+            if (!stats.isNullOrEmpty()) {
+                val topStat = stats
+                    .filter {
+                        val pkg = it.packageName
+                        pkg != null &&
+                                !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) &&
+                                !pkg.contains("keyboard") &&
+                                it.lastTimeUsed > 0
+                    }
+                    .maxByOrNull { it.lastTimeUsed }
+
+                if (topStat != null && (endTime - topStat.lastTimeUsed) < 1000 * 60 * 30) {
+                    return topStat.packageName
+                }
+            }
+        } catch (e: Exception) {
+            Logger.log("Error querying fallback usage stats: ${e.message}", isError = true)
+        }
+
+        return null
     }
 
     private fun registerSystemReceiver() {

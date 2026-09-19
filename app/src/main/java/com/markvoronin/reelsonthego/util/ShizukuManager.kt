@@ -373,4 +373,37 @@ object ShizukuManager {
             -1
         }
     }
+
+    private val TRANSIENT_PACKAGES = setOf(
+        "android",
+        "com.android.systemui",
+        "com.google.android.inputmethod.latin",
+        "com.samsung.android.honeyboard",
+        "com.sec.android.inputmethod",
+        "com.google.android.gms",
+        "com.google.android.permissioncontroller",
+        "com.android.permissioncontroller",
+        "com.google.android.setupwizard",
+        "com.google.android.as",
+        "com.sec.android.app.launcher",
+        "com.google.android.apps.nexuslauncher"
+    )
+
+    fun getTopPackageName(): String? {
+        if (!cachedIsGranted) return null
+        return try {
+            val process = execShizuku("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
+            if (process != null) {
+                val output = process.inputStream.bufferedReader().use { it.readText() }
+                process.drainAndWaitFor()
+                val match = Regex("""([a-zA-Z0-9_.]+)/[a-zA-Z0-9_.$]+""").find(output)
+                val pkg = match?.groupValues?.get(1)
+                if (pkg != null && !TRANSIENT_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
+                    pkg
+                } else null
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
