@@ -3,5 +3,10 @@
   <component name="DetektPluginSettings">
     <option name="enableDetekt" value="true" />
     <option name="enableForProjectResult" value="Accepted" />
+    <option name="configurationFiles">
+      <list>
+        <option value="$PROJECT_DIR$/detekt.yml" />
+      </list>
+    </option>
   </component>
 </project>

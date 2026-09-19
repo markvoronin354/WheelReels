@@ -54,7 +54,7 @@ private val LightColorScheme = lightColorScheme(
 fun ReelsWhileDrivingTheme(
     themeMode: AppThemeMode = AppThemeMode.DARK,
     dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
         AppThemeMode.DARK -> true
@@ -63,7 +63,7 @@ fun ReelsWhileDrivingTheme(
     }
 
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        (dynamicColor) && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -74,6 +74,6 @@ fun ReelsWhileDrivingTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
-        content = content
+        content = content,
     )
 }

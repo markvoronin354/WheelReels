@@ -33,14 +33,13 @@ object ShizukuManager {
     @Volatile
     private var cachedIsRootAvailable: Boolean = false
 
-    private val _isAvailable = MutableStateFlow(false)
+    private val _isAvailable = MutableStateFlow(value = false)
     val isAvailableFlow: StateFlow<Boolean> = _isAvailable.asStateFlow()
 
-    private val _isGranted = MutableStateFlow(false)
+    private val _isGranted = MutableStateFlow(value = false)
     val isGrantedFlow: StateFlow<Boolean> = _isGranted.asStateFlow()
 
-    private val _isRootAvailable = MutableStateFlow(false)
-    val isRootAvailableFlow: StateFlow<Boolean> = _isRootAvailable.asStateFlow()
+    private val _isRootAvailable = MutableStateFlow(value = false)
 
     init {
         init()
@@ -220,7 +219,7 @@ object ShizukuManager {
 
     private fun enqueueGesture(runnable: Runnable) {
         synchronized(gestureQueueLock) {
-            if (isGestureExecuting && pendingGestureRunnable != null) {
+            if ((isGestureExecuting) && (pendingGestureRunnable != null)) {
                 Logger.log("Dropping stale pending gesture in favor of newest gesture")
             }
             pendingGestureRunnable = runnable
@@ -386,7 +385,7 @@ object ShizukuManager {
         "com.google.android.setupwizard",
         "com.google.android.as",
         "com.sec.android.app.launcher",
-        "com.google.android.apps.nexuslauncher"
+        "com.google.android.apps.nexuslauncher",
     )
 
     fun getTopPackageName(): String? {
@@ -398,7 +397,7 @@ object ShizukuManager {
                 process.drainAndWaitFor()
                 val match = Regex("""([a-zA-Z0-9_.]+)/[a-zA-Z0-9_.$]+""").find(output)
                 val pkg = match?.groupValues?.get(1)
-                if (pkg != null && !TRANSIENT_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
+                if ((pkg != null) && (!TRANSIENT_PACKAGES.contains(pkg)) && (!pkg.contains("keyboard"))) {
                     pkg
                 } else null
             } else null

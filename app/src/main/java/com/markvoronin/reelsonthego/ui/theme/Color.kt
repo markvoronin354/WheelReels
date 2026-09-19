@@ -10,16 +10,7 @@ val SecondaryTeal = Color(0xFF0D9488)
 val SecondaryTealLight = Color(0xFF2DD4BF)
 
 val StatusGreen = Color(0xFF10B981)
-val StatusGreenContainer = Color(0xFFD1FAE5)
-val StatusDarkGreenContainer = Color(0xFF064E3B)
-
 val StatusAmber = Color(0xFFF59E0B)
-val StatusAmberContainer = Color(0xFFFEF3C7)
-val StatusDarkAmberContainer = Color(0xFF78350F)
-
-val StatusRed = Color(0xFFEF4444)
-val StatusRedContainer = Color(0xFFFEE2E2)
-val StatusDarkRedContainer = Color(0xFF7F1D1D)
 
 // Dark Theme Surface Palette
 val DarkBackground = Color(0xFF0B1120)

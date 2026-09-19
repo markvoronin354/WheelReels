@@ -1,0 +1,84 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+complexity:
+  active: true
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 40
+    thresholdInClasses: 35
+    thresholdInInterfaces: 20
+    thresholdInObjects: 25
+    thresholdInEnums: 20
+    ignoreDeprecated: true
+    ignorePrivate: false
+    ignoreOverridden: true
+  ReturnCount:
+    active: true
+    max: 6
+    excludedFunctions:
+      - 'equals'
+    excludeLabeled: false
+    excludeReturnFromLambda: true
+    excludeGuardClauses: true
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 40
+    ignoreSingleWhenExpression: true
+    ignoreSimpleWhenEntries: true
+    ignoreNestingFunctions: false
+    nestingFunctions:
+      - 'also'
+      - 'apply'
+      - 'forEach'
+      - 'is'
+      - 'let'
+      - 'run'
+      - 'with'
+  NestedBlockDepth:
+    active: true
+    threshold: 6
+  LongMethod:
+    active: true
+    threshold: 120
+  LongParameterList:
+    active: true
+    functionThreshold: 10
+    constructorThreshold: 10
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+
+style:
+  active: true
+  MagicNumber:
+    active: false
+  FunctionNaming:
+    active: true
+    functionPattern: '([a-z][a-zA-Z0-9]*|[A-Z][a-zA-Z0-9]*)'
+    ignoreAnnotated:
+      - 'Composable'
+  MaxLineLength:
+    active: true
+    maxLineLength: 180
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: true
+    excludeRawStrings: true
+  TooGenericExceptionCaught:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: true
+    maxJumpCount: 3
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    functionPattern: '([a-z][a-zA-Z0-9]*|[A-Z][a-zA-Z0-9]*)'
+    ignoreAnnotated:
+      - 'Composable'

@@ -113,17 +113,17 @@ class MediaButtonService : Service() {
 
     private fun registerSystemMediaKeyListeners() {
         try {
-            val msm = getSystemService(MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+            val msm = (getSystemService(MEDIA_SESSION_SERVICE) as? MediaSessionManager) ?: return
             val msmClass = msm::class.java
 
             // 1. System MediaKeyDispatchedListener
             try {
-                val listenerClass = Class.forName("android.media.session.MediaSessionManager\$OnMediaKeyEventDispatchedListener")
+                val listenerClass = Class.forName("android.media.session.MediaSessionManager${'$'}OnMediaKeyEventDispatchedListener")
                 val proxy = Proxy.newProxyInstance(
                     listenerClass.classLoader,
                     arrayOf(listenerClass)
                 ) { _, _, args ->
-                    if (args != null && args.isNotEmpty()) {
+                    if ((args != null) && (args.isNotEmpty())) {
                         val keyEvent = args[0] as? KeyEvent
                         if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
                             Logger.log("System MediaKeyDispatchedListener: keyCode=${keyEvent.keyCode}")
@@ -286,9 +286,7 @@ class MediaButtonService : Service() {
             }
         }
 
-        if (lastResumedPkg != null) {
-            return lastResumedPkg
-        }
+        if (lastResumedPkg != null) return lastResumedPkg
 
         // 3. Robust Fallback: queryUsageStats (maxByOrNull lastTimeUsed)
         // Catches apps (like Instagram) that were opened minutes ago and remained in foreground
@@ -301,6 +299,7 @@ class MediaButtonService : Service() {
             )
             if (!stats.isNullOrEmpty()) {
                 val topStat = stats
+                    .asSequence()
                     .filter {
                         val pkg = it.packageName
                         pkg != null &&
@@ -350,6 +349,7 @@ class MediaButtonService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun initMediaSession() {
         mediaSession = MediaSession(this, "ReelsMediaSession").apply {
             setFlags(
@@ -821,8 +821,6 @@ class MediaButtonService : Service() {
 
         @Volatile
         private var instance: MediaButtonService? = null
-
-        fun getInstance(): MediaButtonService? = instance
 
         var isRunning: Boolean = false
             private set

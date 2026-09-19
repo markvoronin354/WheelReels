@@ -4,26 +4,23 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.TextUtils
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -126,11 +123,10 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     prefsRepository = prefsRepository,
                     currentThemeMode = currentThemeMode,
-                    onThemeModeChange = { newMode ->
-                        currentThemeMode = newMode
-                        prefsRepository.themeMode = newMode
-                    }
-                )
+                ) { newMode ->
+                    currentThemeMode = newMode
+                    prefsRepository.themeMode = newMode
+                }
             }
         }
     }
@@ -141,7 +137,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     prefsRepository: PreferencesRepository,
     currentThemeMode: AppThemeMode,
-    onThemeModeChange: (AppThemeMode) -> Unit
+    onThemeModeChange: (AppThemeMode) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -153,9 +149,10 @@ fun MainScreen(
     var enabledPackages by remember { mutableStateOf(prefsRepository.enabledPackages) }
     var appPrevActions by remember(isPrevDoubleTap) {
         mutableStateOf(
-            PreferencesRepository.SUPPORTED_APPS.associate { app ->
-                app.packageName to prefsRepository.getPrevActionForPackage(app.packageName)
-            }
+            PreferencesRepository.SUPPORTED_APPS.associateBy(
+                keySelector = { it.packageName },
+                valueTransform = { prefsRepository.getPrevActionForPackage(it.packageName) },
+            )
         )
     }
 
@@ -166,7 +163,7 @@ fun MainScreen(
     var isBatteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
 
     // UI state
-    var showHelpSheet by remember { mutableStateOf(false) }
+    var showHelpSheet by remember { mutableStateOf(value = false) }
 
     // App Version Info
     val versionName = remember(context) {
@@ -524,7 +521,7 @@ fun MainScreen(
                                             FilterChip(
                                                 selected = isSelected,
                                                 onClick = {
-                                                    appPrevActions = appPrevActions + (app.packageName to action)
+                                                    appPrevActions += (app.packageName to action)
                                                     prefsRepository.setPrevActionForPackage(app.packageName, action)
                                                 },
                                                 label = {
@@ -1042,10 +1039,10 @@ private fun launchBatteryOptimizationSettings(context: Context) {
     val pkg = context.packageName
     val intents = listOf(
         // 1. Direct prompt to request ignore battery optimizations
-        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$pkg")),
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$pkg".toUri()),
 
         // 2. App info settings page (Contains "Battery" -> "Unrestricted" on Android 8-15)
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")),
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$pkg".toUri()),
 
         // 3. System-wide ignore battery optimization list
         Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
