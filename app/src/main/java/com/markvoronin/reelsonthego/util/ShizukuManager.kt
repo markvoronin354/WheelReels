@@ -330,7 +330,7 @@ object ShizukuManager {
         }
     }
 
-    private fun execShizuku(command: String): Process? {
+    fun execShizuku(command: String): Process? {
         val method = newProcessMethod ?: return null
         return try {
             method.invoke(null, arrayOf("sh", "-c", command), null, null) as? Process

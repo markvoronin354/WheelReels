@@ -19,6 +19,7 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaMetadata
 import android.media.session.MediaSession
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
@@ -27,6 +28,9 @@ import android.os.IBinder
 import android.os.Looper
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import java.lang.reflect.Proxy
+import java.util.concurrent.Executor
 import com.markvoronin.reelsonthego.MainActivity
 import com.markvoronin.reelsonthego.R
 import com.markvoronin.reelsonthego.data.PreferencesRepository
@@ -98,8 +102,99 @@ class MediaButtonService : Service() {
         // Auto-grant permissions via Shizuku if connected
         ShizukuManager.grantMediaKeyPermissions(this)
 
+        registerSystemMediaKeyListeners()
+
+        // Start real-time Shizuku Logcat MediaKey Monitor for YouTube Shorts/MediaSession hijacking
+        startLogcatMediaKeyMonitor()
+
         // Start foreground app monitoring on background thread
         startAppMonitorThread()
+    }
+
+    private fun registerSystemMediaKeyListeners() {
+        try {
+            val msm = getSystemService(MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+            val msmClass = msm::class.java
+
+            // 1. System MediaKeyDispatchedListener
+            try {
+                val listenerClass = Class.forName("android.media.session.MediaSessionManager\$OnMediaKeyEventDispatchedListener")
+                val proxy = Proxy.newProxyInstance(
+                    listenerClass.classLoader,
+                    arrayOf(listenerClass)
+                ) { _, _, args ->
+                    if (args != null && args.isNotEmpty()) {
+                        val keyEvent = args[0] as? KeyEvent
+                        if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                            Logger.log("System MediaKeyDispatchedListener: keyCode=${keyEvent.keyCode}")
+                            handleInterceptedMediaKey(keyEvent.keyCode)
+                        }
+                    }
+                    null
+                }
+                val addMethod = msmClass.getMethod("addOnMediaKeyEventDispatchedListener", Executor::class.java, listenerClass)
+                val executor = ContextCompat.getMainExecutor(this)
+                addMethod.invoke(msm, executor, proxy)
+                Logger.log("Registered addOnMediaKeyEventDispatchedListener!")
+            } catch (e: Exception) {
+                Logger.log("Failed addOnMediaKeyEventDispatchedListener: ${e.message}")
+            }
+
+            // 2. System MediaKeyListener
+            try {
+                val listenerClass = Class.forName("android.media.session.MediaSessionManager\$OnMediaKeyListener")
+                val proxy = Proxy.newProxyInstance(
+                    listenerClass.classLoader,
+                    arrayOf(listenerClass)
+                ) { _, _, args ->
+                    if (args != null && args.isNotEmpty()) {
+                        val keyEvent = args[0] as? KeyEvent
+                        if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                            Logger.log("System MediaKeyListener: keyCode=${keyEvent.keyCode}")
+                            return@newProxyInstance handleInterceptedMediaKey(keyEvent.keyCode)
+                        }
+                    }
+                    false
+                }
+                val setMethod = msmClass.getMethod("setOnMediaKeyListener", listenerClass, Handler::class.java)
+                setMethod.invoke(msm, proxy, mainHandler)
+                Logger.log("Registered setOnMediaKeyListener!")
+            } catch (e: Exception) {
+                Logger.log("Failed setOnMediaKeyListener: ${e.message}")
+            }
+        } catch (e: Exception) {
+            Logger.log("Error in registerSystemMediaKeyListeners: ${e.message}", isError = true)
+        }
+    }
+
+    private fun handleInterceptedMediaKey(keyCode: Int): Boolean {
+        if (!isCurrentAppTargeted()) return false
+        when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_NEXT,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_NAVIGATE_NEXT,
+            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+            KeyEvent.KEYCODE_CHANNEL_UP -> {
+                Logger.log("Intercepted Media Key $keyCode -> Swipe Up")
+                performSwipeUp()
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_NAVIGATE_PREVIOUS,
+            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
+            KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                if (getActivePrevAction() == PrevAction.LIKE) {
+                    Logger.log("Intercepted Media Key $keyCode -> Double Tap (Like)")
+                    performDoubleTap()
+                } else {
+                    Logger.log("Intercepted Media Key $keyCode -> Swipe Down")
+                    performSwipeDown()
+                }
+                return true
+            }
+        }
+        return false
     }
 
     private fun startAppMonitorThread() {
@@ -124,6 +219,7 @@ class MediaButtonService : Service() {
         val foregroundPkg = getForegroundPackageName() ?: currentForegroundPackage
         if (foregroundPkg.isEmpty()) return
 
+        val pkgChanged = foregroundPkg != currentForegroundPackage
         currentForegroundPackage = foregroundPkg
         val isTargetApp = prefsRepository.isGlobalSwipeEnabled || prefsRepository.isPackageEnabled(foregroundPkg)
 
@@ -132,6 +228,19 @@ class MediaButtonService : Service() {
                 if (mediaSession?.isActive != true) {
                     Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession & AudioFocus")
                     activateMediaSession()
+                } else if (pkgChanged) {
+                    val state = PlaybackState.Builder()
+                        .setActions(
+                            PlaybackState.ACTION_PLAY or
+                                    PlaybackState.ACTION_PAUSE or
+                                    PlaybackState.ACTION_SKIP_TO_NEXT or
+                                    PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                                    PlaybackState.ACTION_FAST_FORWARD or
+                                    PlaybackState.ACTION_REWIND
+                        )
+                        .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                        .build()
+                    mediaSession?.setPlaybackState(state)
                 }
             } else {
                 if (mediaSession?.isActive == true) {
@@ -427,6 +536,23 @@ class MediaButtonService : Service() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 stopSilentAudio()
+                if (isCurrentAppTargeted()) {
+                    mainHandler.post {
+                        val state = PlaybackState.Builder()
+                            .setActions(
+                                PlaybackState.ACTION_PLAY or
+                                        PlaybackState.ACTION_PAUSE or
+                                        PlaybackState.ACTION_SKIP_TO_NEXT or
+                                        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                                        PlaybackState.ACTION_FAST_FORWARD or
+                                        PlaybackState.ACTION_REWIND
+                            )
+                            .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                            .build()
+                        mediaSession?.setPlaybackState(state)
+                        mediaSession?.isActive = true
+                    }
+                }
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 if (mediaSession?.isActive == true) {
@@ -440,7 +566,7 @@ class MediaButtonService : Service() {
         val am = audioManager ?: return false
         val listener = onAudioFocusChangeListener
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                 .setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -453,14 +579,14 @@ class MediaButtonService : Service() {
 
             audioFocusRequest = focusRequest
             val res = am.requestAudioFocus(focusRequest)
-            Logger.log("Requested Audio Focus (AUDIOFOCUS_GAIN): result=$res")
+            Logger.log("Requested Audio Focus (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK): result=$res")
             return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         } else {
             @Suppress("DEPRECATION")
             val res = am.requestAudioFocus(
                 listener,
                 AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             )
             Logger.log("Requested Audio Focus: result=$res")
             return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
@@ -543,8 +669,96 @@ class MediaButtonService : Service() {
         return START_STICKY
     }
 
+    @Volatile
+    private var logcatMonitorThread: Thread? = null
+
+    @Volatile
+    private var isLogcatMonitoring = false
+
+    @Volatile
+    private var lastMediaKeyTriggerTime = 0L
+
+    private fun startLogcatMediaKeyMonitor() {
+        if (isLogcatMonitoring) return
+        isLogcatMonitoring = true
+
+        logcatMonitorThread = Thread {
+            Logger.log("Starting Shizuku Logcat MediaKey Monitor...")
+            while (isLogcatMonitoring) {
+                if (!ShizukuManager.isGranted) {
+                    try { Thread.sleep(2000) } catch (_: InterruptedException) { break }
+                    continue
+                }
+
+                try {
+                    val process = ShizukuManager.execShizuku("logcat -v threadtime -s MediaSessionService:D")
+                    if (process != null) {
+                        val reader = process.inputStream.bufferedReader()
+                        while (isLogcatMonitoring) {
+                            val line = reader.readLine() ?: break
+                            if (line.contains("dispatchMediaKeyEvent") && line.contains("action=ACTION_DOWN")) {
+                                val match = Regex("""keyCode=(KEYCODE_[A-Z0-9_]+)""").find(line)
+                                if (match != null) {
+                                    val keyName = match.groupValues[1]
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastMediaKeyTriggerTime > 250L) {
+                                        lastMediaKeyTriggerTime = now
+                                        mainHandler.post {
+                                            handleLogcatMediaKey(keyName)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        process.destroy()
+                    }
+                } catch (e: Throwable) {
+                    Logger.log("Logcat MediaKey Monitor error: ${e.message}", isError = true)
+                }
+
+                try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+            }
+            Logger.log("Shizuku Logcat MediaKey Monitor stopped")
+        }.apply {
+            name = "LogcatMediaKeyThread"
+            start()
+        }
+    }
+
+    private fun stopLogcatMediaKeyMonitor() {
+        isLogcatMonitoring = false
+        logcatMonitorThread?.interrupt()
+        logcatMonitorThread = null
+    }
+
+    private fun handleLogcatMediaKey(keyName: String) {
+        if (!isCurrentAppTargeted()) return
+        Logger.log("Logcat MediaKey intercepted: $keyName for target app $currentForegroundPackage")
+        when (keyName) {
+            "KEYCODE_MEDIA_NEXT",
+            "KEYCODE_MEDIA_FAST_FORWARD",
+            "KEYCODE_NAVIGATE_NEXT",
+            "KEYCODE_MEDIA_STEP_FORWARD",
+            "KEYCODE_CHANNEL_UP" -> {
+                performSwipeUp()
+            }
+            "KEYCODE_MEDIA_PREVIOUS",
+            "KEYCODE_MEDIA_REWIND",
+            "KEYCODE_NAVIGATE_PREVIOUS",
+            "KEYCODE_MEDIA_STEP_BACKWARD",
+            "KEYCODE_CHANNEL_DOWN" -> {
+                if (getActivePrevAction() == PrevAction.LIKE) {
+                    performDoubleTap()
+                } else {
+                    performSwipeDown()
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        stopLogcatMediaKeyMonitor()
         stopAppMonitorThread()
         unregisterSystemReceiver()
         deactivateMediaSession()

@@ -98,6 +98,7 @@ class PreferencesRepository(context: Context) {
             "com.zhiliaoapp.musically",     // TikTok (Global)
             "com.ss.android.ugc.trill",      // TikTok (Regional)
             "com.google.android.youtube",   // YouTube / Shorts
+            "app.morphe.android.youtube",   // YouTube (Morphe)
             "com.snapchat.android"          // Snapchat
         )
 
@@ -108,6 +109,7 @@ class PreferencesRepository(context: Context) {
             SupportedApp("TikTok", "com.zhiliaoapp.musically"),
             SupportedApp("TikTok (Alt)", "com.ss.android.ugc.trill"),
             SupportedApp("YouTube / Shorts", "com.google.android.youtube"),
+            SupportedApp("YouTube (Morphe)", "app.morphe.android.youtube"),
             SupportedApp("Snapchat", "com.snapchat.android")
         )
     }

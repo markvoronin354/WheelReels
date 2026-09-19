@@ -115,6 +115,10 @@ class MainActivity : ComponentActivity() {
         prefsRepository = PreferencesRepository(this)
         ShizukuManager.init()
 
+        if (prefsRepository.isServiceEnabled) {
+            MediaButtonService.startService(this)
+        }
+
         setContent {
             var currentThemeMode by remember { mutableStateOf(prefsRepository.themeMode) }
 
