@@ -107,7 +107,7 @@ class PreferencesRepository(context: Context) {
             SupportedApp("Facebook Lite", "com.facebook.lite"),
             SupportedApp("TikTok", "com.zhiliaoapp.musically"),
             SupportedApp("TikTok (Alt)", "com.ss.android.ugc.trill"),
-            SupportedApp("YouTube / Shorts", "com.google.android.youtube"),
+            SupportedApp("YouTube", "com.google.android.youtube"),
             SupportedApp("YouTube (Morphe)", "app.morphe.android.youtube"),
             SupportedApp("Snapchat", "com.snapchat.android"),
         )
