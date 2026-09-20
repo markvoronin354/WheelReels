@@ -9,7 +9,7 @@
 - 🎵 **Steering Wheel Controls**: Intercepts `KEYCODE_MEDIA_NEXT`, `KEYCODE_MEDIA_PREVIOUS`, and Bluetooth AVRCP media session commands.
 - ⚡ **Shevery / Shizuku & Root Support**: Uses system ADB commands (`input swipe`) via Shizuku/Shevery or Root (`su`) to bypass OEM accessibility blocks and dispatch gestures.
 - 🎯 **Target App Selection**: Choose specific apps (Instagram, TikTok, Facebook, YouTube, Snapchat) or enable **Global Swiping**.
-- 🟢 **Head Unit Optimization**: Holds MediaSession AudioFocus and outputs media metadata so car head units enable physical steering wheel buttons.
+- 🟢 **Head Unit Optimization**: Configures active MediaSession metadata and transport controls so car head units route physical steering wheel button events.
 
 ---
 
@@ -38,7 +38,7 @@
 
 ## 🛠️ Architecture
 
-- **`MediaButtonService`**: Foreground service holding `MediaSession` & `AudioFocus` to capture Bluetooth AVRCP commands from car head units and monitor target apps via `UsageStatsManager`.
+- **`MediaButtonService`**: Foreground service holding `MediaSession` to capture Bluetooth AVRCP commands from car head units and monitor target apps via `UsageStatsManager`.
 - **`ShizukuManager`**: Executes privileged ADB shell commands (`input swipe`) when authorized via Shizuku/Shevery or Root (`su`).
 - **`PreferencesRepository`**: Stores app settings and package selections using `SharedPreferences`.
 
