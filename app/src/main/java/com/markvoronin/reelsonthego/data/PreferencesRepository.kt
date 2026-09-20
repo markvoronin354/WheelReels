@@ -82,11 +82,11 @@ class PreferencesRepository(context: Context) {
         private const val KEY_PREV_ACTION_PREFIX = "key_prev_action_"
         private const val KEY_THEME_MODE = "key_theme_mode"
 
-        const val DEFAULT_SWIPE_DURATION_MS = 80L // Fast 80ms snap scroll
+        const val DEFAULT_SWIPE_DURATION_MS = 40L // Fast 60ms snap scroll
 
         val SWIPE_SPEED_OPTIONS = listOf(
-            SwipeSpeedOption("Fast (80 ms)", 80L),
-            SwipeSpeedOption("Medium (180 ms)", 180L),
+            SwipeSpeedOption("Fast (60 ms)", 40L),
+            SwipeSpeedOption("Medium (150 ms)", 150L),
             SwipeSpeedOption("Slow (250 ms)", 250L),
         )
 
@@ -95,8 +95,8 @@ class PreferencesRepository(context: Context) {
             "com.facebook.katana",          // Facebook
             "com.facebook.lite",            // Facebook Lite
             "com.zhiliaoapp.musically",     // TikTok (Global)
-            "com.ss.android.ugc.trill",      // TikTok (Regional)
-            "com.google.android.youtube",   // YouTube / Shorts
+            "com.ss.android.ugc.trill",     // TikTok (Regional)
+            "com.google.android.youtube",   // YouTube
             "app.morphe.android.youtube",   // YouTube (Morphe)
             "com.snapchat.android",         // Snapchat
         )

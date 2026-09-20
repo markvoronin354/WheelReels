@@ -148,19 +148,19 @@ object ShizukuManager {
 
     private const val GESTURE_DEBOUNCE_MS = 300L
 
-    fun swipeUp(width: Int, height: Int, durationMs: Long = 180L) {
+    fun swipeUp(width: Int, height: Int, durationMs: Long = 60L) {
         val startX = width / 2
-        val startY = (height * 0.75f).toInt()
+        val startY = (height * 0.85f).toInt()
         val endX = width / 2
-        val endY = (height * 0.40f).toInt()
+        val endY = (height * 0.15f).toInt()
         executeSwipe(startX, startY, endX, endY, durationMs)
     }
 
-    fun swipeDown(width: Int, height: Int, durationMs: Long = 180L) {
+    fun swipeDown(width: Int, height: Int, durationMs: Long = 60L) {
         val startX = width / 2
-        val startY = (height * 0.40f).toInt()
+        val startY = (height * 0.15f).toInt()
         val endX = width / 2
-        val endY = (height * 0.75f).toInt()
+        val endY = (height * 0.85f).toInt()
         executeSwipe(startX, startY, endX, endY, durationMs)
     }
 
