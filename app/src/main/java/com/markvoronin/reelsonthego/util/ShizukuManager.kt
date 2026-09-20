@@ -143,19 +143,24 @@ object ShizukuManager {
         }
     }
 
-    fun swipeUp(width: Int, height: Int, durationMs: Long = 120L) {
+    @Volatile
+    private var lastGestureEnqueueTime: Long = 0L
+
+    private const val GESTURE_DEBOUNCE_MS = 300L
+
+    fun swipeUp(width: Int, height: Int, durationMs: Long = 180L) {
         val startX = width / 2
-        val startY = (height * 0.85f).toInt()
+        val startY = (height * 0.75f).toInt()
         val endX = width / 2
-        val endY = (height * 0.45f).toInt()
+        val endY = (height * 0.40f).toInt()
         executeSwipe(startX, startY, endX, endY, durationMs)
     }
 
-    fun swipeDown(width: Int, height: Int, durationMs: Long = 120L) {
+    fun swipeDown(width: Int, height: Int, durationMs: Long = 180L) {
         val startX = width / 2
-        val startY = (height * 0.45f).toInt()
+        val startY = (height * 0.40f).toInt()
         val endX = width / 2
-        val endY = (height * 0.85f).toInt()
+        val endY = (height * 0.75f).toInt()
         executeSwipe(startX, startY, endX, endY, durationMs)
     }
 
@@ -218,7 +223,14 @@ object ShizukuManager {
     }
 
     private fun enqueueGesture(runnable: Runnable) {
+        val now = System.currentTimeMillis()
         synchronized(gestureQueueLock) {
+            if (now - lastGestureEnqueueTime < GESTURE_DEBOUNCE_MS) {
+                Logger.log("ShizukuManager: Dropping gesture request within ${now - lastGestureEnqueueTime}ms debounce window")
+                return
+            }
+            lastGestureEnqueueTime = now
+
             if ((isGestureExecuting) && (pendingGestureRunnable != null)) {
                 Logger.log("Dropping stale pending gesture in favor of newest gesture")
             }
