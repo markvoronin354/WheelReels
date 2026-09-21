@@ -41,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DirectionsCar
@@ -97,6 +98,7 @@ import com.markvoronin.reelsonthego.data.AppThemeMode
 import com.markvoronin.reelsonthego.data.PreferencesRepository
 import com.markvoronin.reelsonthego.data.PrevAction
 import com.markvoronin.reelsonthego.service.MediaButtonService
+import com.markvoronin.reelsonthego.service.ReelsAccessibilityService
 import com.markvoronin.reelsonthego.ui.theme.ReelsWhileDrivingTheme
 import com.markvoronin.reelsonthego.ui.theme.StatusAmber
 import com.markvoronin.reelsonthego.ui.theme.StatusGreen
@@ -143,6 +145,7 @@ fun MainScreen(
 
     // Preferences & State
     var isMasterEnabled by remember { mutableStateOf(prefsRepository.isServiceEnabled) }
+    var isRequireBluetooth by remember { mutableStateOf(prefsRepository.isRequireBluetoothEnabled) }
     var isPrevDoubleTap by remember { mutableStateOf(prefsRepository.isPrevButtonDoubleTap) }
     var selectedSwipeDuration by remember { mutableLongStateOf(prefsRepository.swipeDurationMs) }
     var isGlobalSwipeEnabled by remember { mutableStateOf(prefsRepository.isGlobalSwipeEnabled) }
@@ -158,6 +161,7 @@ fun MainScreen(
 
     // Service & Permission States
     var isMediaServiceRunning by remember { mutableStateOf(MediaButtonService.isRunning) }
+    var isAccessibilityRunning by remember { mutableStateOf(ReelsAccessibilityService.isServiceRunning) }
     val shizukuAvailable by ShizukuManager.isAvailableFlow.collectAsState()
     val shizukuGranted by ShizukuManager.isGrantedFlow.collectAsState()
     var isBatteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
@@ -198,6 +202,7 @@ fun MainScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isMediaServiceRunning = MediaButtonService.isRunning
+                isAccessibilityRunning = ReelsAccessibilityService.isServiceRunning
                 ShizukuManager.refreshCapabilitiesAsync()
                 isBatteryOptIgnored = isIgnoringBatteryOptimizations(context)
             }
@@ -326,6 +331,7 @@ fun MainScreen(
                     prefsRepository.isServiceEnabled = enabled
                 },
                 isMediaServiceRunning = isMediaServiceRunning,
+                isAccessibilityRunning = isAccessibilityRunning,
                 shizukuAvailable = shizukuAvailable,
                 shizukuGranted = shizukuGranted,
                 onToggleMediaService = {
@@ -344,6 +350,17 @@ fun MainScreen(
                     } else {
                         MediaButtonService.stopService(context)
                         isMediaServiceRunning = false
+                    }
+                },
+                onAccessibilityClick = {
+                    try {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                        Toast.makeText(context, "Enable WheelReels in Accessibility Settings", Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error opening Accessibility Settings: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onShizukuClick = handleShizukuClick
@@ -418,6 +435,20 @@ fun MainScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    // Require Bluetooth Connection Row
+                    SwitchSettingRow(
+                        icon = Icons.Rounded.Bluetooth,
+                        title = "Require Bluetooth",
+                        subtitle = "Only activate when connected to Bluetooth audio",
+                        checked = isRequireBluetooth,
+                        onCheckedChange = { checked ->
+                            isRequireBluetooth = checked
+                            prefsRepository.isRequireBluetoothEnabled = checked
+                        }
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     // Remap Prev Button Row
                     SwitchSettingRow(
@@ -600,6 +631,24 @@ fun MainScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
+                    // Accessibility Service Status
+                    PermissionTileRow(
+                        title = "Accessibility Service",
+                        statusText = if (isAccessibilityRunning) "Active" else "Enable in Settings",
+                        isOk = isAccessibilityRunning,
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                Toast.makeText(context, "Enable WheelReels in Accessibility Settings", Toast.LENGTH_LONG).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error opening Accessibility Settings: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+
                     // Shizuku Status
                     PermissionTileRow(
                         title = "Shizuku / ADB Touch Injection",
@@ -759,9 +808,11 @@ private fun HeroMasterCard(
     isEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
     isMediaServiceRunning: Boolean,
+    isAccessibilityRunning: Boolean,
     shizukuAvailable: Boolean,
     shizukuGranted: Boolean,
     onToggleMediaService: () -> Unit,
+    onAccessibilityClick: () -> Unit,
     onShizukuClick: () -> Unit
 ) {
     val containerColor = if (isEnabled) {
@@ -839,7 +890,7 @@ private fun HeroMasterCard(
             // Quick Status Chips Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 StatusBadgeChip(
                     label = if (isMediaServiceRunning) "Listener Active" else "Start Listener",
@@ -849,7 +900,14 @@ private fun HeroMasterCard(
                 )
 
                 StatusBadgeChip(
-                    label = if (shizukuGranted) "Shizuku OK" else if (shizukuAvailable) "Shizuku Ready" else "Shizuku",
+                    label = if (isAccessibilityRunning) "Accessibility OK" else "Accessibility",
+                    isOk = isAccessibilityRunning,
+                    onClick = onAccessibilityClick,
+                    modifier = Modifier.weight(1f)
+                )
+
+                StatusBadgeChip(
+                    label = if (shizukuGranted) "Shizuku OK" else if (shizukuAvailable) "Shizuku" else "Optional",
                     isOk = shizukuGranted,
                     onClick = onShizukuClick,
                     modifier = Modifier.weight(1f)

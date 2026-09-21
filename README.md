@@ -1,6 +1,6 @@
 # WheelReels 🚗📱
 
-**WheelReels** is an Android utility application that allows drivers to navigate short-form video apps (Instagram Reels, TikTok, Facebook Reels, YouTube Shorts, Snapchat) using the **Next** and **Previous** track buttons on their car's steering wheel via Bluetooth. Technically this is the corret way of doing it...hands free driving. have fun and stay safe!
+**WheelReels** is an Android utility application that allows drivers to navigate short-form video apps (Instagram Reels, TikTok, Facebook Reels, YouTube Shorts) using the **Next** and **Previous** track buttons on their car's steering wheel via Bluetooth. Technically this is the corret way of doing it...hands free driving. have fun and stay safe!
 
 ---
 
@@ -8,7 +8,7 @@
 
 - 🎵 **Steering Wheel Controls**: Intercepts `KEYCODE_MEDIA_NEXT`, `KEYCODE_MEDIA_PREVIOUS`, and Bluetooth AVRCP media session commands.
 - ⚡ **Shevery / Shizuku & Root Support**: Uses system ADB commands (`input swipe`) via Shizuku/Shevery or Root (`su`) to bypass OEM accessibility blocks and dispatch gestures.
-- 🎯 **Target App Selection**: Choose specific apps (Instagram, TikTok, Facebook, YouTube, Snapchat) or enable **Global Swiping**.
+- 🎯 **Target App Selection**: Choose specific apps (Instagram, TikTok, Facebook, YouTube) or enable **Global Swiping**.
 - 🟢 **Head Unit Optimization**: Configures active MediaSession metadata and transport controls so car head units route physical steering wheel button events.
 
 ---

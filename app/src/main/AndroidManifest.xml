@@ -35,6 +35,27 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <service
+            android:name=".service.ReelsAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <receiver
+            android:name=".service.WheelReelsMediaReceiver"
+            android:exported="true">
+            <!-- 2147483647 is Int.MAX_VALUE to ensure we get the media button broadcast BEFORE YouTube Music -->
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Required Provider for Shizuku and Shizuku forks (Shevery / Sui) -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

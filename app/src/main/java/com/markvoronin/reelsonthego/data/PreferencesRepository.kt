@@ -2,6 +2,9 @@ package com.markvoronin.reelsonthego.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import androidx.core.content.edit
 
 class PreferencesRepository(context: Context) {
@@ -65,6 +68,10 @@ class PreferencesRepository(context: Context) {
         prefs.edit { putString(key, action.name) }
     }
 
+    var isRequireBluetoothEnabled: Boolean
+        get() = prefs.getBoolean(KEY_REQUIRE_BLUETOOTH, true)
+        set(value) = prefs.edit { putBoolean(KEY_REQUIRE_BLUETOOTH, value) }
+
     var themeMode: AppThemeMode
         get() {
             val str = prefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
@@ -81,6 +88,7 @@ class PreferencesRepository(context: Context) {
         private const val KEY_ENABLED_PACKAGES = "key_enabled_packages"
         private const val KEY_PREV_ACTION_PREFIX = "key_prev_action_"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_REQUIRE_BLUETOOTH = "key_require_bluetooth"
 
         const val DEFAULT_SWIPE_DURATION_MS = 40L // Fast 60ms snap scroll
 
@@ -98,7 +106,6 @@ class PreferencesRepository(context: Context) {
             "com.ss.android.ugc.trill",     // TikTok (Regional)
             "com.google.android.youtube",   // YouTube
             "app.morphe.android.youtube",   // YouTube (Morphe)
-            "com.snapchat.android",         // Snapchat
         )
 
         val SUPPORTED_APPS = listOf(
@@ -109,7 +116,6 @@ class PreferencesRepository(context: Context) {
             SupportedApp("TikTok (Alt)", "com.ss.android.ugc.trill"),
             SupportedApp("YouTube", "com.google.android.youtube"),
             SupportedApp("YouTube (Morphe)", "app.morphe.android.youtube"),
-            SupportedApp("Snapchat", "com.snapchat.android"),
         )
     }
 }
@@ -154,3 +160,33 @@ enum class AppThemeMode(val label: String) {
         }
     }
 }
+
+fun isBluetoothAudioConnected(context: Context): Boolean {
+    val audioManager = (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager) ?: return false
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        devices.any { device ->
+            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+    }
+}
+
+fun getAppDisplayName(packageName: String): String {
+    val supported = PreferencesRepository.SUPPORTED_APPS.firstOrNull { it.packageName == packageName }
+    return when {
+        supported != null -> supported.displayName
+        packageName.contains("instagram") -> "Instagram"
+        packageName.contains("youtube") -> "YouTube"
+        packageName.contains("facebook") -> "Facebook"
+        packageName.contains("musically") || packageName.contains("trill") || packageName.contains("tiktok") -> "TikTok"
+        packageName.isEmpty() -> "App"
+        else -> packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+    }
+}
+
+
