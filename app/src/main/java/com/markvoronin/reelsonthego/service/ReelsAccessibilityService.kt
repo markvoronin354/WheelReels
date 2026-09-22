@@ -9,13 +9,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Path
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
-import android.widget.Toast
 import com.markvoronin.reelsonthego.data.PreferencesRepository
-import com.markvoronin.reelsonthego.data.getAppDisplayName
 import com.markvoronin.reelsonthego.data.isBluetoothAudioConnected
 import com.markvoronin.reelsonthego.util.Logger
 import com.markvoronin.reelsonthego.util.ShizukuManager
@@ -115,20 +111,6 @@ class ReelsAccessibilityService : AccessibilityService() {
         }
     }
 
-    private var lastToastMsg: String = ""
-    private var lastToastTime: Long = 0L
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    private fun showLightweightToast(msg: String) {
-        val now = System.currentTimeMillis()
-        if (lastToastMsg == msg && now - lastToastTime < 3000L) return
-        lastToastMsg = msg
-        lastToastTime = now
-        mainHandler.post {
-            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun handleAppLifecycleChange(packageName: String) {
         if (!prefsRepository.isServiceEnabled) return
 
@@ -136,9 +118,7 @@ class ReelsAccessibilityService : AccessibilityService() {
 
         if (isTargetApp) {
             if (prefsRepository.isRequireBluetoothEnabled && !isBluetoothAudioConnected(this)) {
-                val appName = getAppDisplayName(packageName)
                 Logger.log("Target app opened ($packageName), but Bluetooth audio is NOT connected -> Skipping MediaButtonService start")
-                showLightweightToast("WheelReels: $appName open (No Bluetooth)")
                 return
             }
 

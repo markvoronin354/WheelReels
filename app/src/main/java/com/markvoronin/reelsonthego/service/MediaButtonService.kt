@@ -625,7 +625,6 @@ class MediaButtonService : Service() {
         val appName = getAppDisplayName(currentForegroundPackage)
         val notifTitle = if (appName.isNotEmpty() && appName != "App") "Active: $appName (Bluetooth Connected)" else "Control Active"
         startForeground(NOTIFICATION_ID, buildNotification(notifTitle))
-        showLightweightToast("WheelReels: Active for $appName 🚗")
         Logger.log("Activated MediaSession for Target App ($currentForegroundPackage)")
     }
 
@@ -949,19 +948,6 @@ class MediaButtonService : Service() {
         }
     }
 
-    private var lastToastMsg: String = ""
-    private var lastToastTime: Long = 0L
-
-    private fun showLightweightToast(msg: String) {
-        val now = System.currentTimeMillis()
-        if (lastToastMsg == msg && now - lastToastTime < 3000L) return
-        lastToastMsg = msg
-        lastToastTime = now
-        mainHandler.post {
-            Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private var lastNotificationText: String = ""
 
     private fun updateNotificationText(text: String) {
@@ -983,7 +969,6 @@ class MediaButtonService : Service() {
         if (instance == this) {
             instance = null
         }
-        showLightweightToast("WheelReels: Service Stopped")
         Logger.log("MediaButtonService destroyed -> 0 Background Drain")
     }
 
