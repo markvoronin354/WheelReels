@@ -54,6 +54,9 @@ class MediaButtonService : Service() {
     private var currentForegroundPackage: String = ""
 
     @Volatile
+    private var wasBackgroundMusicPlaying: Boolean = false
+
+    @Volatile
     private var lastQueryTimestamp: Long = 0L
 
     private var bgThread: HandlerThread? = null
@@ -276,19 +279,24 @@ class MediaButtonService : Service() {
 
                 mainHandler.post {
                     if (isTargetApp) {
+                        val bgMusicPlaying = isBackgroundMusicPlaying()
+                        val musicStateChanged = bgMusicPlaying != wasBackgroundMusicPlaying
+                        wasBackgroundMusicPlaying = bgMusicPlaying
+                        
                         if (mediaSession?.isActive != true) {
                             Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession")
                             activateMediaSession()
-                        } else if (pkgChanged) {
+                        } else if (pkgChanged || musicStateChanged) {
                             val appName = getAppDisplayName(foregroundPkg)
                             updateNotificationText("Active: $appName (Bluetooth Connected)")
-                            if (isYouTubeApp(foregroundPkg) || isBackgroundMusicPlaying()) {
+                            if (isYouTubeApp(foregroundPkg) || bgMusicPlaying) {
                                 stopSilentAudio()
                                 abandonAudioFocus()
                             } else {
                                 val focusGranted = requestAudioFocus()
                                 if (focusGranted) {
                                     startSilentAudio()
+                                    forceStopGhostMediaApps()
                                 }
                             }
                             val state = PlaybackState.Builder()
@@ -420,6 +428,18 @@ class MediaButtonService : Service() {
                 MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
                         MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
             )
+
+            // Force the system to route implicit media button broadcasts to OUR receiver
+            val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                setClass(this@MediaButtonService, WheelReelsMediaReceiver::class.java)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                this@MediaButtonService,
+                0,
+                mediaButtonIntent,
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            setMediaButtonReceiver(pendingIntent)
 
             val metadata = MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, "WheelReels Control")
@@ -595,12 +615,16 @@ class MediaButtonService : Service() {
     private fun activateMediaSession() {
         if (mediaSession?.isActive == true) return
 
-        stopSilentAudio()
-        abandonAudioFocus()
-
         val bgMusicPlaying = isBackgroundMusicPlaying()
         if (!bgMusicPlaying) {
             forceStopGhostMediaApps()
+            val focusGranted = requestAudioFocus()
+            if (focusGranted) {
+                startSilentAudio()
+            }
+        } else {
+            stopSilentAudio()
+            abandonAudioFocus()
         }
 
         val state = PlaybackState.Builder()
@@ -620,6 +644,7 @@ class MediaButtonService : Service() {
             isActive = true
         }
 
+        // We don't need the temporary hijack if we hold true audio focus, but we leave it as a fallback
         hijackMediaButtonRouting()
 
         val appName = getAppDisplayName(currentForegroundPackage)
@@ -635,10 +660,26 @@ class MediaButtonService : Service() {
                 val process = ShizukuManager.execShizuku("dumpsys media_session")
                 if (process != null) {
                     val reader = process.inputStream.bufferedReader()
-                    val packagesToKill = mutableSetOf<String>()
+                    val packagesToKill = mutableSetOf(
+                        "com.google.android.apps.youtube.music", // YouTube Music
+                        "com.google.android.youtube",            // YouTube
+                        "app.morphe.android.youtube",            // YouTube Morphe
+                        "app.morphe.android.youtube.music",      // YouTube Music Morphe
+                        "com.spotify.music",                     // Spotify
+                        "com.apple.android.music",               // Apple Music
+                        "com.amazon.mp3",                        // Amazon Music
+                        "com.soundcloud.android",                // SoundCloud
+                        "deezer.android.app",                    // Deezer
+                        "com.tidal.fi"                           // Tidal
+                    )
+                    
+                    // Remove safe packages from the hardcoded list
+                    packagesToKill.remove(currentForegroundPackage)
+                    packagesToKill.remove(packageName)
+
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        val match = Regex("""package=([a-zA-Z0-9_.]+)""").find(line!!)
+                        val match = Regex("""(?:package=|packages=|ownerPackageName=|ComponentInfo\{)([a-zA-Z0-9_.]+)""").find(line!!)
                         if (match != null) {
                             val pkg = match.groupValues[1]
                             val isSystemOrSafe = pkg.startsWith("com.android.") ||
