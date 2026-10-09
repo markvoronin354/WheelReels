@@ -246,9 +246,9 @@ class ReelsAccessibilityService : AccessibilityService() {
         }
 
         val startX = width / 2f
-        val startY = height * 0.75f
+        val startY = height * 0.91f
         val endX = width / 2f
-        val endY = height * 0.25f
+        val endY = height * 0.18f
 
         dispatchSwipeGesture(startX, startY, endX, endY, duration)
     }
@@ -270,9 +270,9 @@ class ReelsAccessibilityService : AccessibilityService() {
         }
 
         val startX = width / 2f
-        val startY = height * 0.25f
+        val startY = height * 0.18f
         val endX = width / 2f
-        val endY = height * 0.75f
+        val endY = height * 0.91f
 
         dispatchSwipeGesture(startX, startY, endX, endY, duration)
     }
