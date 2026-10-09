@@ -104,8 +104,9 @@ class ReelsAccessibilityService : AccessibilityService() {
                     if (currentPackageName != pkg) {
                         currentPackageName = pkg
                         Logger.log("Foreground App Changed via Accessibility: $currentPackageName")
-                        handleAppLifecycleChange(currentPackageName)
                     }
+                    MediaButtonService.getInstance()?.updateForegroundPackage(pkg)
+                    handleAppLifecycleChange(pkg)
                 }
             }
         }
@@ -130,6 +131,7 @@ class ReelsAccessibilityService : AccessibilityService() {
     }
 
     private fun isTransientSystemPackage(pkg: String): Boolean {
+        if (pkg.isEmpty()) return true
         val systemPackages = setOf(
             "android",
             "com.android.systemui",
@@ -139,9 +141,18 @@ class ReelsAccessibilityService : AccessibilityService() {
             "com.google.android.gms",
             "com.google.android.permissioncontroller",
             "com.android.permissioncontroller",
-            "com.google.android.setupwizard"
+            "com.google.android.setupwizard",
+            "com.google.android.as",
+            "com.samsung.android.incallui",
+            "com.android.incallui",
+            "com.samsung.android.app.controlpanel",
+            "com.samsung.android.oneui.widgets"
         )
-        return systemPackages.contains(pkg) || pkg.contains("keyboard") || pkg.contains("inputmethod")
+        return systemPackages.contains(pkg) ||
+                pkg.contains("keyboard") ||
+                pkg.contains("inputmethod") ||
+                pkg.contains("volume") ||
+                pkg.contains("overlay")
     }
 
     override fun onInterrupt() {

@@ -259,19 +259,60 @@ class MediaButtonService : Service() {
         bgHandler = null
     }
 
+    fun updateForegroundPackage(packageName: String) {
+        if (packageName.isEmpty() || isTransientPackage(packageName)) return
+        if (currentForegroundPackage != packageName) {
+            currentForegroundPackage = packageName
+            Logger.log("Foreground Package updated via Accessibility: $packageName")
+            bgHandler?.post { checkForegroundApp() }
+        } else if (mediaSession?.isActive != true && (prefsRepository.isGlobalSwipeEnabled || prefsRepository.isPackageEnabled(packageName))) {
+            bgHandler?.post { checkForegroundApp() }
+        }
+    }
+
+    private fun isTransientPackage(pkg: String): Boolean {
+        if (pkg.isEmpty()) return true
+        val systemPackages = setOf(
+            "android",
+            "com.android.systemui",
+            "com.google.android.inputmethod.latin",
+            "com.samsung.android.honeyboard",
+            "com.sec.android.inputmethod",
+            "com.google.android.gms",
+            "com.google.android.permissioncontroller",
+            "com.android.permissioncontroller",
+            "com.google.android.setupwizard",
+            "com.google.android.as",
+            "com.samsung.android.incallui",
+            "com.android.incallui",
+            "com.samsung.android.app.controlpanel",
+            "com.samsung.android.oneui.widgets"
+        )
+        return systemPackages.contains(pkg) ||
+                pkg.contains("keyboard") ||
+                pkg.contains("inputmethod") ||
+                pkg.contains("volume") ||
+                pkg.contains("overlay")
+    }
+
     private fun checkForegroundApp() {
         if (!prefsRepository.isServiceEnabled) return
 
         if (prefsRepository.isRequireBluetoothEnabled && !isBluetoothAudioConnected(this)) {
             mainHandler.post {
                 if (mediaSession?.isActive == true) {
-                    Logger.log("Bluetooth not connected -> Deactivating MediaSession & Stopping MediaButtonService")
+                    Logger.log("Bluetooth not connected -> Deactivating MediaSession")
                     deactivateMediaSession()
-                    stopSelf()
                 }
             }
         } else {
-            val foregroundPkg = getForegroundPackageName() ?: currentForegroundPackage
+            val detectedPkg = getForegroundPackageName()
+            val foregroundPkg = if (!detectedPkg.isNullOrEmpty() && !isTransientPackage(detectedPkg)) {
+                detectedPkg
+            } else {
+                currentForegroundPackage
+            }
+
             if (foregroundPkg.isNotEmpty()) {
                 val pkgChanged = foregroundPkg != currentForegroundPackage
                 currentForegroundPackage = foregroundPkg
@@ -284,7 +325,7 @@ class MediaButtonService : Service() {
                         wasBackgroundMusicPlaying = bgMusicPlaying
                         
                         if (mediaSession?.isActive != true) {
-                            Logger.log("Foreground Target App Detected ($foregroundPkg) -> Activating MediaSession")
+                            Logger.log("Foreground Target App Active ($foregroundPkg) -> Activating MediaSession")
                             activateMediaSession()
                         } else if (pkgChanged || musicStateChanged) {
                             val appName = getAppDisplayName(foregroundPkg)
@@ -314,9 +355,8 @@ class MediaButtonService : Service() {
                         }
                     } else {
                         if (mediaSession?.isActive == true) {
-                            Logger.log("Non-Target App in Foreground ($foregroundPkg) -> Deactivating MediaSession & Stopping MediaButtonService")
+                            Logger.log("Non-Target App in Foreground ($foregroundPkg) -> Deactivating MediaSession (Service Remains Running)")
                             deactivateMediaSession()
-                            stopSelf()
                         }
                     }
                 }
@@ -328,7 +368,7 @@ class MediaButtonService : Service() {
         // 1. Shizuku Direct Window Focus Path (Fastest & Most Accurate when Shizuku is active)
         if (ShizukuManager.isGranted) {
             val shizukuTopPkg = ShizukuManager.getTopPackageName()
-            if (!shizukuTopPkg.isNullOrEmpty()) {
+            if (!shizukuTopPkg.isNullOrEmpty() && !isTransientPackage(shizukuTopPkg)) {
                 return shizukuTopPkg
             }
         }
@@ -352,7 +392,7 @@ class MediaButtonService : Service() {
                 events.getNextEvent(event)
                 if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
                     val pkg = event.packageName
-                    if (pkg != null && !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) && !pkg.contains("keyboard")) {
+                    if (pkg != null && !isTransientPackage(pkg)) {
                         lastResumedPkg = pkg
                     }
                 }
@@ -373,10 +413,7 @@ class MediaButtonService : Service() {
                     .asSequence()
                     .filter {
                         val pkg = it.packageName
-                        pkg != null &&
-                                !TRANSIENT_SYSTEM_PACKAGES.contains(pkg) &&
-                                !pkg.contains("keyboard") &&
-                                it.lastTimeUsed > 0
+                        pkg != null && !isTransientPackage(pkg) && it.lastTimeUsed > 0
                     }
                     .maxByOrNull { it.lastTimeUsed }
 
@@ -536,14 +573,10 @@ class MediaButtonService : Service() {
     @Volatile
     private var lastActionTime = 0L
 
-    private val actionDebounceMs = 350L
+    private val actionDebounceMs = 200L
 
     private fun canPerformAction(): Boolean {
         val now = System.currentTimeMillis()
-        if (now - serviceStartTime < 750L) {
-            Logger.log("Media key action ignored: within initial 750ms service startup grace period")
-            return false
-        }
         return synchronized(this) {
             if (now - lastActionTime < actionDebounceMs) {
                 Logger.log("Media key action ignored: duplicate event within ${now - lastActionTime}ms debounce window")
@@ -765,8 +798,8 @@ class MediaButtonService : Service() {
             setPlaybackState(state)
             isActive = false
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        Logger.log("Deactivated MediaSession & Released AudioFocus & Removed Live Notification")
+        updateNotificationText("WheelReels Standby (Monitoring Target Apps)")
+        Logger.log("Deactivated MediaSession & Released AudioFocus (Foreground Service Active)")
     }
 
     private val onAudioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -925,16 +958,16 @@ class MediaButtonService : Service() {
                         val monitorStartTime = System.currentTimeMillis()
                         val reader = process.inputStream.bufferedReader()
                         while (isLogcatMonitoring) {
-                            val line = reader.readLine() ?: break
+                            val line = try { reader.readLine() } catch (_: Exception) { null } ?: break
                             val now = System.currentTimeMillis()
-                            if (now - monitorStartTime < 750L) {
+                            if (now - monitorStartTime < 100L) {
                                 continue
                             }
                             if (line.contains("dispatchMediaKeyEvent") && line.contains("action=ACTION_DOWN")) {
                                 val match = Regex("""keyCode=(KEYCODE_[A-Z0-9_]+)""").find(line)
                                 if (match != null) {
                                     val keyName = match.groupValues[1]
-                                    if (now - lastMediaKeyTriggerTime > 250L) {
+                                    if (now - lastMediaKeyTriggerTime > 200L) {
                                         lastMediaKeyTriggerTime = now
                                         mainHandler.post {
                                             handleLogcatMediaKey(keyName)
@@ -943,7 +976,7 @@ class MediaButtonService : Service() {
                                 }
                             }
                         }
-                        process.destroy()
+                        try { process.destroy() } catch (_: Exception) {}
                     }
                 } catch (e: Throwable) {
                     Logger.log("Logcat MediaKey Monitor error: ${e.message}", isError = true)
@@ -1004,6 +1037,7 @@ class MediaButtonService : Service() {
         stopAppMonitorThread()
         unregisterSystemReceiver()
         deactivateMediaSession()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         mediaSession?.release()
         mediaSession = null
         isRunning = false
@@ -1080,7 +1114,15 @@ class MediaButtonService : Service() {
             "com.google.android.permissioncontroller",
             "com.android.permissioncontroller",
             "com.google.android.setupwizard",
-            "com.google.android.as"
+            "com.google.android.as",
+            "com.samsung.android.incallui",
+            "com.android.incallui",
+            "com.samsung.android.app.controlpanel",
+            "com.samsung.android.oneui.widgets",
+            "com.sec.android.app.launcher",
+            "com.google.android.apps.nexuslauncher",
+            "com.miui.home",
+            "com.oneplus.launcher"
         )
 
         fun startService(context: Context) {

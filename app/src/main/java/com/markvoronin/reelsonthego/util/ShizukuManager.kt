@@ -146,7 +146,7 @@ object ShizukuManager {
     @Volatile
     private var lastGestureEnqueueTime: Long = 0L
 
-    private const val GESTURE_DEBOUNCE_MS = 300L
+    private const val GESTURE_DEBOUNCE_MS = 100L
 
     fun swipeUp(width: Int, height: Int, durationMs: Long = 60L) {
         val startX = width / 2
@@ -398,6 +398,12 @@ object ShizukuManager {
         "com.google.android.as",
         "com.sec.android.app.launcher",
         "com.google.android.apps.nexuslauncher",
+        "com.miui.home",
+        "com.oneplus.launcher",
+        "com.samsung.android.incallui",
+        "com.android.incallui",
+        "com.samsung.android.app.controlpanel",
+        "com.samsung.android.oneui.widgets"
     )
 
     fun getTopPackageName(): String? {
@@ -409,7 +415,7 @@ object ShizukuManager {
                 process.drainAndWaitFor()
                 val match = Regex("""([a-zA-Z0-9_.]+)/[a-zA-Z0-9_.$]+""").find(output)
                 val pkg = match?.groupValues?.get(1)
-                if ((pkg != null) && (!TRANSIENT_PACKAGES.contains(pkg)) && (!pkg.contains("keyboard"))) {
+                if ((pkg != null) && (!TRANSIENT_PACKAGES.contains(pkg)) && (!pkg.contains("keyboard")) && (!pkg.contains("volume")) && (!pkg.contains("overlay"))) {
                     pkg
                 } else null
             } else null
