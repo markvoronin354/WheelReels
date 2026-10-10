@@ -27,11 +27,8 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.view.KeyEvent
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import java.lang.reflect.Proxy
-import java.util.concurrent.Executor
 import com.markvoronin.reelsonthego.MainActivity
 import com.markvoronin.reelsonthego.R
 import com.markvoronin.reelsonthego.data.PreferencesRepository
@@ -40,6 +37,8 @@ import com.markvoronin.reelsonthego.data.getAppDisplayName
 import com.markvoronin.reelsonthego.data.isBluetoothAudioConnected
 import com.markvoronin.reelsonthego.util.Logger
 import com.markvoronin.reelsonthego.util.ShizukuManager
+import java.lang.reflect.Proxy
+import java.util.concurrent.Executor
 
 class MediaButtonService : Service() {
 
@@ -123,6 +122,7 @@ class MediaButtonService : Service() {
         startAppMonitorThread()
     }
 
+    @Suppress("DiscouragedPrivateApi", "PrivateApi")
     private fun registerSystemMediaKeyListeners() {
         try {
             val msm = (getSystemService(MEDIA_SESSION_SERVICE) as? MediaSessionManager) ?: return
@@ -130,7 +130,7 @@ class MediaButtonService : Service() {
 
             // 1. System MediaKeyDispatchedListener
             try {
-                val listenerClass = Class.forName("android.media.session.MediaSessionManager${'$'}OnMediaKeyEventDispatchedListener")
+                val listenerClass = Class.forName("android.media.session.MediaSessionManager" + '$' + "OnMediaKeyEventDispatchedListener")
                 val proxy = Proxy.newProxyInstance(
                     listenerClass.classLoader,
                     arrayOf(listenerClass)
@@ -168,7 +168,7 @@ class MediaButtonService : Service() {
 
             // 2. System MediaKeyListener
             try {
-                val listenerClass = Class.forName("android.media.session.MediaSessionManager\$OnMediaKeyListener")
+                val listenerClass = Class.forName("android.media.session.MediaSessionManager" + '$' + "OnMediaKeyListener")
                 val proxy = Proxy.newProxyInstance(
                     listenerClass.classLoader,
                     arrayOf(listenerClass)
@@ -271,24 +271,8 @@ class MediaButtonService : Service() {
     }
 
     private fun isTransientPackage(pkg: String): Boolean {
-        if (pkg.isEmpty()) return true
-        val systemPackages = setOf(
-            "android",
-            "com.android.systemui",
-            "com.google.android.inputmethod.latin",
-            "com.samsung.android.honeyboard",
-            "com.sec.android.inputmethod",
-            "com.google.android.gms",
-            "com.google.android.permissioncontroller",
-            "com.android.permissioncontroller",
-            "com.google.android.setupwizard",
-            "com.google.android.as",
-            "com.samsung.android.incallui",
-            "com.android.incallui",
-            "com.samsung.android.app.controlpanel",
-            "com.samsung.android.oneui.widgets"
-        )
-        return systemPackages.contains(pkg) ||
+        return pkg.isEmpty() ||
+                TRANSIENT_SYSTEM_PACKAGES.contains(pkg) ||
                 pkg.contains("keyboard") ||
                 pkg.contains("inputmethod") ||
                 pkg.contains("volume") ||
@@ -399,7 +383,7 @@ class MediaButtonService : Service() {
             }
         }
 
-        if (lastResumedPkg != null) return lastResumedPkg
+        lastResumedPkg?.let { return it }
 
         // 3. Robust Fallback: queryUsageStats (maxByOrNull lastTimeUsed)
         try {
@@ -563,8 +547,7 @@ class MediaButtonService : Service() {
     private fun isCurrentAppTargeted(): Boolean {
         if (prefsRepository.isGlobalSwipeEnabled) return true
         val pkg = currentForegroundPackage
-        if (pkg.isEmpty()) return false
-        return prefsRepository.isPackageEnabled(pkg)
+        return pkg.isNotEmpty() && prefsRepository.isPackageEnabled(pkg)
     }
 
     @Volatile
@@ -634,7 +617,6 @@ class MediaButtonService : Service() {
     }
 
     private fun isYouTubeApp(packageName: String): Boolean {
-        if (packageName.isEmpty()) return false
         return packageName == "com.google.android.youtube" ||
                 packageName == "app.morphe.android.youtube" ||
                 packageName.contains("youtube")
@@ -1104,6 +1086,24 @@ class MediaButtonService : Service() {
         var isRunning: Boolean = false
             private set
 
+        fun startService(context: Context) {
+            val intent = Intent(context, MediaButtonService::class.java).apply {
+                action = ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stopService(context: Context) {
+            val intent = Intent(context, MediaButtonService::class.java).apply {
+                action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
+
         private val TRANSIENT_SYSTEM_PACKAGES = setOf(
             "android",
             "com.android.systemui",
@@ -1124,23 +1124,5 @@ class MediaButtonService : Service() {
             "com.miui.home",
             "com.oneplus.launcher"
         )
-
-        fun startService(context: Context) {
-            val intent = Intent(context, MediaButtonService::class.java).apply {
-                action = ACTION_START
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        }
-
-        fun stopService(context: Context) {
-            val intent = Intent(context, MediaButtonService::class.java).apply {
-                action = ACTION_STOP
-            }
-            context.startService(intent)
-        }
     }
 }
