@@ -89,11 +89,7 @@ object ShizukuManager {
         }
 
         val granted = try {
-            if (available) {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            } else {
-                false
-            }
+            available && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (_: Throwable) {
             false
         }
@@ -119,8 +115,7 @@ object ShizukuManager {
     }
 
     private fun probeRootAvailable(): Boolean {
-        if (cachedIsRootAvailable) return true
-        return try {
+        return cachedIsRootAvailable || try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             process.drainAndWaitFor() == 0
         } catch (_: Throwable) {
