@@ -65,7 +65,14 @@ class MediaButtonService : Service() {
     private val appMonitorRunnable = object : Runnable {
         override fun run() {
             checkForegroundApp()
-            bgHandler?.postDelayed(this, 1000L)
+            val isAccessibilityActive = ReelsAccessibilityService.isServiceRunning
+            val isTargetApp = isCurrentAppTargeted()
+            val delayMs = when {
+                isAccessibilityActive -> 5000L
+                isTargetApp -> 1000L
+                else -> 3000L
+            }
+            bgHandler?.postDelayed(this, delayMs)
         }
     }
 
@@ -114,9 +121,6 @@ class MediaButtonService : Service() {
         ShizukuManager.grantMediaKeyPermissions(this)
 
         registerSystemMediaKeyListeners()
-
-        // Start real-time Shizuku Logcat MediaKey Monitor for YouTube Shorts/MediaSession hijacking
-        startLogcatMediaKeyMonitor()
 
         // Start foreground app monitoring on background thread
         startAppMonitorThread()
@@ -349,6 +353,11 @@ class MediaButtonService : Service() {
     }
 
     private fun getForegroundPackageName(): String? {
+        // Event-driven fast path: if Accessibility Service is active, use the current foreground package
+        if (ReelsAccessibilityService.isServiceRunning && currentForegroundPackage.isNotEmpty()) {
+            return currentForegroundPackage
+        }
+
         // 1. Shizuku Direct Window Focus Path (Fastest & Most Accurate when Shizuku is active)
         if (ShizukuManager.isGranted) {
             val shizukuTopPkg = ShizukuManager.getTopPackageName()
@@ -659,6 +668,8 @@ class MediaButtonService : Service() {
             isActive = true
         }
 
+        startLogcatMediaKeyMonitor()
+
         // We don't need the temporary hijack if we hold true audio focus, but we leave it as a fallback
         hijackMediaButtonRouting()
 
@@ -770,6 +781,7 @@ class MediaButtonService : Service() {
 
         stopSilentAudio()
         abandonAudioFocus()
+        stopLogcatMediaKeyMonitor()
 
         val state = PlaybackState.Builder()
             .setActions(0)

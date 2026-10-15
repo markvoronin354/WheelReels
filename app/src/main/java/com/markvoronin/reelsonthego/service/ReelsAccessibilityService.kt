@@ -2,6 +2,7 @@ package com.markvoronin.reelsonthego.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,6 +18,7 @@ import com.markvoronin.reelsonthego.util.Logger
 import com.markvoronin.reelsonthego.util.ShizukuManager
 import java.lang.ref.WeakReference
 
+@SuppressLint("AccessibilityPolicy")
 class ReelsAccessibilityService : AccessibilityService() {
 
     private lateinit var prefsRepository: PreferencesRepository
@@ -96,15 +98,12 @@ class ReelsAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                val pkg = event.packageName?.toString()
-                if (!pkg.isNullOrEmpty() && !isTransientSystemPackage(pkg)) {
-                    if (currentPackageName != pkg) {
-                        currentPackageName = pkg
-                        Logger.log("Foreground App Changed via Accessibility: $currentPackageName")
-                    }
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString()
+            if (!pkg.isNullOrEmpty() && !isTransientSystemPackage(pkg)) {
+                if (currentPackageName != pkg) {
+                    currentPackageName = pkg
+                    Logger.log("Foreground App Changed via Accessibility: $currentPackageName")
                     MediaButtonService.getInstance()?.updateForegroundPackage(pkg)
                     handleAppLifecycleChange(pkg)
                 }
@@ -120,12 +119,20 @@ class ReelsAccessibilityService : AccessibilityService() {
         if (isTargetApp) {
             if (prefsRepository.isRequireBluetoothEnabled && !isBluetoothAudioConnected(this)) {
                 Logger.log("Target app opened ($packageName), but Bluetooth audio is NOT connected -> Skipping MediaButtonService start")
+                if (MediaButtonService.isRunning) {
+                    MediaButtonService.stopService(this)
+                }
                 return
             }
 
             if (!MediaButtonService.isRunning) {
                 Logger.log("Target app opened ($packageName) -> Starting MediaButtonService")
                 MediaButtonService.startService(this)
+            }
+        } else {
+            if (MediaButtonService.isRunning) {
+                Logger.log("Non-target app in foreground ($packageName) -> Stopping MediaButtonService")
+                MediaButtonService.stopService(this)
             }
         }
     }
@@ -146,7 +153,7 @@ class ReelsAccessibilityService : AccessibilityService() {
             "com.samsung.android.incallui",
             "com.android.incallui",
             "com.samsung.android.app.controlpanel",
-            "com.samsung.android.oneui.widgets"
+            "com.samsung.android.oneui.widgets",
         )
         return systemPackages.contains(pkg) ||
                 pkg.contains("keyboard") ||
@@ -277,50 +284,6 @@ class ReelsAccessibilityService : AccessibilityService() {
         dispatchSwipeGesture(startX, startY, endX, endY, duration)
     }
 
-    fun doubleTap(force: Boolean = false) {
-        if (!isAppTargeted(force)) {
-            Logger.log("doubleTap ignored: $currentPackageName is not an enabled target app")
-            return
-        }
-
-        val displayMetrics = resources.displayMetrics
-        val width = displayMetrics.widthPixels
-        val height = displayMetrics.heightPixels
-
-        if (ShizukuManager.isGranted) {
-            ShizukuManager.doubleTap(width, height)
-            return
-        }
-
-        val centerX = width / 2f
-        val centerY = height / 2f
-
-        val tapPath = Path().apply {
-            moveTo(centerX, centerY)
-        }
-
-        val tap1 = GestureDescription.StrokeDescription(tapPath, 0L, 50L)
-        val tap2 = GestureDescription.StrokeDescription(tapPath, 100L, 50L)
-
-        val gesture = GestureDescription.Builder()
-            .addStroke(tap1)
-            .addStroke(tap2)
-            .build()
-
-        val success = dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                super.onCompleted(gestureDescription)
-                Logger.log("Accessibility Double Tap (Like) completed successfully")
-            }
-
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                super.onCancelled(gestureDescription)
-                Logger.log("Accessibility Double Tap cancelled", isError = true)
-            }
-        }, null)
-
-        Logger.log("Dispatched Accessibility Double Tap: success=$success")
-    }
 
     private fun dispatchSwipeGesture(
         startX: Float,
@@ -359,8 +322,6 @@ class ReelsAccessibilityService : AccessibilityService() {
         val isServiceRunning: Boolean
             get() = instance?.get() != null
 
-        fun getInstance(): ReelsAccessibilityService? {
-            return instance?.get()
-        }
+
     }
 }

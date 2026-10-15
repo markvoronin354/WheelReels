@@ -119,6 +119,7 @@ object ShizukuManager {
     }
 
     private fun probeRootAvailable(): Boolean {
+        if (cachedIsRootAvailable) return true
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             process.drainAndWaitFor() == 0
