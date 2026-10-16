@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = "1.6"
+val appVersionName = "1.6.1"
 val appVersionCode = appVersionName.filter { it.isDigit() }.toInt()
 
 android {
