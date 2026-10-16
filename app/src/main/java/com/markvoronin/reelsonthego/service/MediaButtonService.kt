@@ -589,7 +589,7 @@ class MediaButtonService : Service() {
 
         if (ShizukuManager.isGranted) {
             val displayMetrics = resources.displayMetrics
-            ShizukuManager.swipeUp(displayMetrics.widthPixels, displayMetrics.heightPixels, prefsRepository.swipeDurationMs)
+            ShizukuManager.swipeUp(displayMetrics.widthPixels, displayMetrics.heightPixels, prefsRepository.swipeDurationMs, currentForegroundPackage)
         } else {
             Logger.log("Swipe Up failed: Shizuku permission is not granted!", isError = true)
         }

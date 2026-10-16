@@ -248,12 +248,13 @@ class ReelsAccessibilityService : AccessibilityService() {
         val duration = prefsRepository.swipeDurationMs
 
         if (ShizukuManager.isGranted) {
-            ShizukuManager.swipeUp(width, height, duration)
+            ShizukuManager.swipeUp(width, height, duration, currentPackageName)
             return
         }
 
+        val isFacebook = currentPackageName.contains("facebook", ignoreCase = true)
         val startX = width / 2f
-        val startY = height * 0.91f
+        val startY = if (isFacebook) height * 0.75f else height * 0.91f
         val endX = width / 2f
         val endY = height * 0.18f
 

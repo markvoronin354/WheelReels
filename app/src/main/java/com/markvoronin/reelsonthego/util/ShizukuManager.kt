@@ -144,9 +144,10 @@ object ShizukuManager {
 
     private const val GESTURE_DEBOUNCE_MS = 100L
 
-    fun swipeUp(width: Int, height: Int, durationMs: Long = 60L) {
+    fun swipeUp(width: Int, height: Int, durationMs: Long = 60L, packageName: String? = null) {
+        val isFacebook = packageName?.contains("facebook", ignoreCase = true) == true
         val startX = width / 2
-        val startY = (height * 0.91f).toInt()
+        val startY = if (isFacebook) (height * 0.75f).toInt() else (height * 0.91f).toInt()
         val endX = width / 2
         val endY = (height * 0.18f).toInt()
         executeSwipe(startX, startY, endX, endY, durationMs)
